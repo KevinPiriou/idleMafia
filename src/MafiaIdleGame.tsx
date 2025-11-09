@@ -8,6 +8,12 @@ import Warehouse from "./components/Warehouse";
 import WarReportModal from "./components/WarReportModal";
 import RelationsModal from "./components/RelationsModal";
 import TensionModal from "./components/TensionModal";
+import { Avatar } from "./components/ui/Avatar";
+import { Card } from "./components/ui/Card";
+import { ActionCard } from "./components/ui/ActionCard";
+import { ParticleCanvas } from "./components/ui/ParticleCanvas";
+import { useAudioEngine } from "./hooks/useAudioEngine";
+import { generateMafiaFullName } from "./utils/nameGenerator";
 import {
   clamp,
   TOP_FILL_TIME,
