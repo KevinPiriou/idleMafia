@@ -34,7 +34,7 @@ import { Card } from "./components/ui/Card";
 import { ActionCard } from "./components/ui/ActionCard";
 import { ParticleCanvas } from "./components/ui/ParticleCanvas";
 import { GeneratorCard } from "./components/ui/GeneratorCard";
-import { StaffListWithPagination } from "./components/StaffListWithPagination";
+import { StaffListWithPagination } from "./components/ui/StaffListWithPagination";
 import { InvestmentsPanel } from "./components/InvestmentPanel";
 import { useAudioEngine } from "./hooks/useAudioEngine";
 import { generateMafiaFullName } from "./utils/nameGenerator";
@@ -1991,6 +1991,7 @@ export default function MafiaIdleRedesign() {
               });
             }, 30);
           }}
+          existingStaffNames={state.staff.map((s) => s.name)}
           onFinished={(member) => {
             setState((prev) => ({ ...prev, staff: [...prev.staff, member] }));
           }}
@@ -2441,7 +2442,7 @@ function CaseOpeningModal({
     setDone(true);
     // Build member based on rarity result and rank
     const id = generateItemId("staff");
-    const existingNames = new Set(state.staff.map((s) => s.name));
+    const existingNames = new Set(stateRef.current.staff.map((s) => s.name));
     const name = generateMafiaFullName(existingNames);
     const rank = pickRoleForRarity(result);
     const base = rankBase[rank] + rarityBonus[result];

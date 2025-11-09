@@ -11,27 +11,36 @@ export type GeneratorKey =
 
 export type Generator = {
   key: GeneratorKey;
-  label: string;
-  desc: string;
+  name: string;
+  icon: string;
   baseCost: number;
-  baseIncome: number;
-  unlocked: boolean;
+  costGrowth: number;
+  baseProd: number;
+  baseHeat: number;
+  legal: boolean;
+  owned: number;
 };
 
 export type Upgrade = {
-  key: string;
+  id: string;
   label: string;
   desc: string;
+  target: GeneratorKey | "global";
   cost: number;
-  generatorKey: GeneratorKey;
-  multiplier: number;
+  owned: boolean;
+  mult: number;
 };
 
 export type StaffMember = {
   id: string;
   name: string;
   role: string;
-  hiredAt: number;
+  family: string;
+  stats: [number, number, number, number]; // [Charisme, Force, Esprit, Réseau]
+  hiredAt?: number; // Timestamp optionnel
+  lastMissionTimestamp?: number;
+  woundedUntil?: number;
+  woundedReason?: string;
 };
 
 export type FamilyState = "peace" | "war" | "partnership";
@@ -76,12 +85,47 @@ export type SaveState = {
   cash: number;
   respect: number;
   heat: number;
+  level: number;
+  xp: number;
+
+  // Generators et upgrades
+  gens: Record<GeneratorKey, Generator>;
+  upgrades: Record<string, Upgrade>;
+
+  // Prestige
+  prestigeMult: number;
+  prestigePoints: number;
+
+  // Heat management
+  heatMitigationPerSec: number;
+
+  // Staff
   staff: StaffMember[];
+  assignments: Record<string, GeneratorKey | null>;
+
+  // Families
   families: Family[];
+  tempGlobalBuffUntil?: number;
+  tension: number;
+
+  // Sanctions
+  disabledUntil?: number;
+  actionLockedUntilHeat?: number;
+
+  // Inventory
   inventory?: {
     weapons: WeaponItem[];
     vehicles: VehicleItem[];
     contracts: number;
   };
   equipped?: Record<string, string | null>;
+
+  // Investments
+  permaGlobalMult?: number;
+  costDiscount?: number;
+  investmentsPurchased?: Record<string, boolean>;
+
+  // Meta
+  lastSave: number;
+  version?: number;
 };

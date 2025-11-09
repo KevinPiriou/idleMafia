@@ -1,5 +1,5 @@
 import React from "react";
-import type { Generator, GeneratorKey, StaffMember } from "../../domain/types";
+import type { Generator, StaffMember } from "../../domain/types";
 import { formatNumber } from "../../domain/format";
 import { TOP_FILL_TIME } from "../../domain/balance";
 import { Avatar } from "../../components/ui/Avatar";
