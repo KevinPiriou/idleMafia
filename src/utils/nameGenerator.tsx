@@ -232,7 +232,7 @@ const MAFIA_NICK = [
 /**
  * Génère un nom mafieux unique
  * @param existingNames Set des noms déjà utilisés pour éviter duplications
- * @returns Nom complet formaté
+ * @returns Nom complet formaté "Prénom 'Surnom' Nom"
  */
 export function generateMafiaFullName(existingNames: Set<string>): string {
   let tries = 0;
@@ -246,7 +246,7 @@ export function generateMafiaFullName(existingNames: Set<string>): string {
     }
   }
 
-  // Fallback avec ID unique si toutes les combinaisons épuisées
+  // Fallback avec ID unique si toutes les combinaisons épuisées (très rare)
   const id = Math.random().toString(36).substring(2, 7).toUpperCase();
   return `${MAFIA_FIRST[0]} "Le ${id}" ${MAFIA_LAST[0]}`;
 }

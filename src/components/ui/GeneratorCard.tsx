@@ -124,4 +124,34 @@ export function GeneratorCard({
           className={`px-2 py-2 rounded-lg text-xs font-bold transition ${
             cash >= cost10
               ? "bg-emerald-600 hover:bg-emerald-500"
-              : "bg-zinc-800 opacity-50 cursor-not-
+              : "bg-zinc-800 opacity-50 cursor-not-allowed"
+          }`}
+        >
+          +10
+          <br />${formatNumber(cost10)}
+        </button>
+        <button
+          onClick={onBuyMax}
+          className="px-2 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs font-bold transition"
+        >
+          MAX
+        </button>
+      </div>
+
+      {assigned.length > 0 && (
+        <div className="mt-3 border-t border-yellow-600/20 pt-2">
+          <div className="text-[11px] text-zinc-400 mb-1">
+            Personnel affecté
+          </div>
+          <div className="flex -space-x-2">
+            {assigned.map((s) => (
+              <div key={s.id} title={s.name} className="inline-block">
+                <Avatar name={s.id} size={26} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

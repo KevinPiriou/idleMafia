@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from "react";
+import React, { useRef, useEffect } from "react";
 
-export default function ParticleCanvas() {
+export function ParticleCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -8,6 +8,7 @@ export default function ParticleCanvas() {
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
@@ -69,6 +70,7 @@ export default function ParticleCanvas() {
       animationId = requestAnimationFrame(animate);
     }
     animate();
+
     const handleResize = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-export default function useAudioEngine() {
+export function useAudioEngine() {
   const ctxRef = useRef<AudioContext | null>(null);
   const bgGainRef = useRef<GainNode | null>(null);
   const sfxGainRef = useRef<GainNode | null>(null);
@@ -57,7 +57,7 @@ export default function useAudioEngine() {
       g.connect(bgGainRef.current!);
       osc.start(t);
       osc.stop(t + 0.5);
-    }, 600);
+    }, 600) as unknown as number;
   };
 
   const applyGains = (muted: boolean) => {
@@ -71,6 +71,7 @@ export default function useAudioEngine() {
     applyGains(m);
     setEnabled(!m);
   };
+
   const setVolume = async (v: number) => {
     volRef.current = Math.max(0, Math.min(1, v));
     await ensureCtx();
@@ -119,6 +120,7 @@ export default function useAudioEngine() {
     osc1.stop(t + 1.25);
     osc2.stop(t + 1.25);
   };
+
   const startReelSound = async () => {
     const ctx = await ensureCtx();
     stopReelSound();
@@ -138,6 +140,7 @@ export default function useAudioEngine() {
       osc.stop(t + 0.06);
     }, 90) as unknown as number;
   };
+
   const stopReelSound = () => {
     if (reelTimerRef.current != null) {
       window.clearInterval(reelTimerRef.current);
@@ -178,11 +181,13 @@ export default function useAudioEngine() {
     applyGains(false);
     startBgLoop();
   };
+
   const disable = () => {
     setEnabled(false);
     stopBgLoop();
     applyGains(true);
   };
+
   useEffect(() => {
     return () => {
       setEnabled(false);
