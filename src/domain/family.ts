@@ -1,33 +1,5 @@
-import type { Family, FamilyState, SaveState } from "./types";
-export type { Family, FamilyState };
-export type GeneratorKey =
-  | "pickpocket"
-  | "racket"
-  | "club"
-  | "casino"
-  | "olive"
-  | "bar"
-  | "grocery";
-
-export type WeaponItem = {
-  id: string;
-  name: string;
-  rarity: "common" | "uncommon" | "rare" | "epic" | "legendary";
-  bonusPower: number;
-  bonusDesc: string;
-  price: number;
-};
-
-export type VehicleItem = {
-  id: string;
-  name: string;
-  rarity: "common" | "uncommon" | "rare" | "epic" | "legendary";
-  speed: number;
-  armor: number;
-  price: number;
-};
-
-// === Données & helpers recopiés ===
+// === Fonctions familles extraites mot pour mot ===
+import type { SaveState, Family } from "./types";
 
 export function defaultFamilies(): Family[] {
   return [
@@ -79,7 +51,6 @@ export function defaultFamilies(): Family[] {
   ];
 }
 
-// Puissance de guerre = somme des bonusPower des armes équipées (copié tel quel)
 export function computeWarPower(state: SaveState): number {
   const inv = state.inventory || { weapons: [], vehicles: [], contracts: 0 };
   const eq = state.equipped || {};
@@ -92,7 +63,6 @@ export function computeWarPower(state: SaveState): number {
   return power;
 }
 
-// Score d’une famille (copié tel quel)
 export function computeFamilyScore(f: Family): number {
   const e = f.econ || {
     cash: 0,
@@ -110,7 +80,6 @@ export function computeFamilyScore(f: Family): number {
   );
 }
 
-// Puissance composite du joueur (copié tel quel)
 export function computeCompositePower(state: SaveState): number {
   const inv = state.inventory || { weapons: [], vehicles: [], contracts: 0 };
   const staffCount = state.staff.length;
@@ -123,7 +92,6 @@ export function computeCompositePower(state: SaveState): number {
   );
 }
 
-// Simulation économie des familles (copiée, avec corrections de syntaxe de spread)
 export function simulateFamiliesEconomy(
   state: SaveState,
   dt: number,
@@ -153,10 +121,7 @@ export function simulateFamiliesEconomy(
     const noise = (Math.random() - 0.5) * 0.1; // +/-5%
     const inflow = Math.max(0, playerCashPerSec * factor * mult * (1 + noise));
 
-    // Cash
     econ.cash += inflow * dt;
-
-    // Événements aléatoires
     if (Math.random() < 0.003 * dt) {
       const good = Math.random() < 0.55;
       if (good) {
@@ -168,7 +133,6 @@ export function simulateFamiliesEconomy(
       }
     }
 
-    // Achats
     if (econ.cash > avgWeaponPrice * 1.2 && Math.random() < 0.004 * dt) {
       econ.cash -= avgWeaponPrice;
       econ.weapons += 1;
@@ -177,20 +141,16 @@ export function simulateFamiliesEconomy(
       econ.cash -= avgVehiclePrice;
       econ.vehicles += 1;
     }
-
-    // Démographie
     const memberDrift = (0.02 + econ.respect / 10000) * dt;
     if (Math.random() < memberDrift) econ.members += 1;
     if (Math.random() < 0.005 * dt && econ.members > 5) econ.members -= 1;
 
-    // Respect (trend)
     econ.respect = Math.max(
       0,
       econ.respect +
         (Math.log10(1 + playerCashPerSec) * 0.05 - state.heat * 0.001) * dt
     );
 
-    // Faillite / recovery
     if (
       econ.cash <= 0 &&
       econ.respect < 50 &&
@@ -209,7 +169,6 @@ export function simulateFamiliesEconomy(
     f.econ = econ;
   });
 
-  // Attribution du rang "boss" (copié tel quel)
   const playerScore = computeCompositePower(state);
   let maxScore = playerScore;
   const scores: number[] = fams.map((ff) => computeFamilyScore(ff));
@@ -227,6 +186,5 @@ export function simulateFamiliesEconomy(
       ff.econ.tier = "normal";
     }
   });
-
   return fams;
 }

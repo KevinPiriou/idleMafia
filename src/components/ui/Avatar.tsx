@@ -1,16 +1,18 @@
-import React from "react";
+//import React from "react";
 
-interface AvatarProps {
+export default function Avatar({
+  name,
+  size,
+  variant,
+  colors,
+}: {
   name: string;
   size: number;
   variant?: string;
   colors?: string[];
-}
-
-export function Avatar({ name, size, variant, colors }: AvatarProps) {
-  const safeName = name || "?";
+}) {
   const defaultColors = ["#d4af37", "#f59e0b", "#ef4444", "#8b5cf6", "#10b981"];
-  const hash = safeName
+  const hash = name
     .split("")
     .reduce((acc, char) => acc + char.charCodeAt(0), 0);
   const palette = colors ?? defaultColors;
@@ -19,7 +21,7 @@ export function Avatar({ name, size, variant, colors }: AvatarProps) {
     variant === "beam"
       ? { boxShadow: "inset 0 0 8px rgba(255,255,255,0.06)" }
       : {};
-  const initial = safeName.charAt(0).toUpperCase() || "?";
+  const initial = name.charAt(0).toUpperCase();
 
   return (
     <div
