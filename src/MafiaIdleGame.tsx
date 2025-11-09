@@ -6,10 +6,10 @@ import type {
   Upgrade,
   SaveState,
   StaffMember,
-  Family,
   Rarity,
   WeaponItem,
   VehicleItem,
+  FamilyState,
 } from "./domain/types";
 import {
   defaultFamilies,
@@ -330,17 +330,6 @@ const prestigeGain = (respect: number) => Math.floor(Math.sqrt(respect) / 50);
 
 // revenuePerSecForKey imported from domain/economy
 
-// ----------------------------
-// Staff & Relations (new)
-// ----------------------------
-type StaffMember = {
-  id: string;
-  name: string;
-  role: string;
-  family: string;
-  stats: [number, number, number, number]; // [Art/Charisme, Force, Esprit, Réseau]
-};
-
 function defaultStaff(): StaffMember[] {
   return [
     {
@@ -373,29 +362,6 @@ function defaultStaff(): StaffMember[] {
     },
   ];
 }
-
-// ----------------------------
-// Inventory & Market types
-// ----------------------------
-type Rarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
-
-type WeaponItem = {
-  id: string;
-  name: string;
-  rarity: Rarity;
-  bonusPower: number; // impacts war outcomes
-  bonusDesc: string;
-  price: number;
-};
-
-type VehicleItem = {
-  id: string;
-  name: string;
-  rarity: Rarity;
-  speed: number;
-  armor: number;
-  price: number;
-};
 
 function generateItemId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
@@ -2374,6 +2340,7 @@ function CaseOpeningModal({
   audio,
   canOpenAnother,
   onOpenAnother,
+  existingStaffNames,
 }: {
   pool: Rarity[];
   targetIndex: number;
@@ -2384,6 +2351,7 @@ function CaseOpeningModal({
   audio?: ReturnType<typeof useAudioEngine>;
   canOpenAnother?: boolean;
   onOpenAnother?: () => void;
+  existingStaffNames: string[];
 }) {
   const containerWidth = 600; // px
   const itemWidth = 120; // px
@@ -2442,8 +2410,8 @@ function CaseOpeningModal({
     setDone(true);
     // Build member based on rarity result and rank
     const id = generateItemId("staff");
-    const existingNames = new Set(stateRef.current.staff.map((s) => s.name));
-    const name = generateMafiaFullName(existingNames);
+    const names = new Set(existingStaffNames);
+    const name = generateMafiaFullName(names);
     const rank = pickRoleForRarity(result);
     const base = rankBase[rank] + rarityBonus[result];
     const spread = raritySpread[result];
@@ -2506,6 +2474,7 @@ function CaseOpeningModal({
     raritySpread,
     result,
     audio,
+    existingStaffNames,
   ]);
 
   useEffect(() => {
