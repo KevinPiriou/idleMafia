@@ -20,11 +20,12 @@ export function computeFamilyScore(f: Family): number {
     weapons: 0,
     vehicles: 0,
   };
+  // Aligné sur la version actuellement utilisée dans MafiaIdleGame.tsx
   return (
-    e.cash * 0.5 +
-    e.respect * 50 +
-    e.members * 500 +
-    e.weapons * 3000 +
-    e.vehicles * 7000
+    e.cash / 10000 +
+    e.respect / 500 +
+    e.members / 50 +
+    e.weapons * 2 +
+    e.vehicles * 1.5
   );
 }

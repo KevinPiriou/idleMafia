@@ -57,7 +57,6 @@ export type Family = {
   };
   econFactor?: number;
 };
-
 export type Rarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
 
 export type WeaponItem = {

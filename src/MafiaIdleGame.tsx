@@ -1,5 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import confetti from "canvas-confetti";
+import type { Family, FamilyState } from "./domain/family";
+import {
+  defaultFamilies,
+  computeWarPower,
+  simulateFamiliesEconomy,
+  //computeFamilyScore,
+  //computeCompositePower,
+} from "./domain/family";
+
 import WarModal from "./WarModal";
 import TopBar from "./components/TopBar";
 import BlackMarket from "./components/BlackMarket";
@@ -8,12 +17,12 @@ import Warehouse from "./components/Warehouse";
 import WarReportModal from "./components/WarReportModal";
 import RelationsModal from "./components/RelationsModal";
 import TensionModal from "./components/TensionModal";
-import { Avatar } from "./components/ui/Avatar";
-import { Card } from "./components/ui/Card";
-import { ActionCard } from "./components/ui/ActionCard";
-import { ParticleCanvas } from "./components/ui/ParticleCanvas";
-import { useAudioEngine } from "./hooks/useAudioEngine";
-import { generateMafiaFullName } from "./utils/nameGenerator";
+//import { Avatar } from "./components/ui/Avatar";
+//import { Card } from "./components/ui/Card";
+//import { ActionCard } from "./components/ui/ActionCard";
+//import { ParticleCanvas } from "./components/ui/ParticleCanvas";
+//import { useAudioEngine } from "./hooks/useAudioEngine";
+//import { generateMafiaFullName } from "./utils/nameGenerator";
 import {
   clamp,
   TOP_FILL_TIME,
@@ -33,6 +42,7 @@ import {
   revenuePerSecForKey,
   xpForLevel,
 } from "./domain/economy";
+//import { computeXpDelta, applyLevelUps } from "./domain/progression";
 import { pickRarity } from "./domain/events";
 import Modal from "./Modal";
 import EventModal from "./components/EventModal";
@@ -945,231 +955,6 @@ type VehicleItem = {
 
 function generateItemId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-}
-
-// staffBonusFor imported from domain/economy
-
-// staffMultiplierForGenerator imported from domain/economy
-
-type FamilyState = "peace" | "war" | "partnership";
-type Family = {
-  id: string;
-  name: string;
-  state: FamilyState;
-  partnershipSectors: GeneratorKey[]; // selected filières for partnership
-  lastWarTs?: number; // ms
-  // Dynamic economy fields
-  econ?: {
-    cash: number;
-    respect: number;
-    members: number;
-    weapons: number;
-    vehicles: number;
-    tier?: "normal" | "bankrupt" | "boss";
-  };
-  econFactor?: number; // 0.6 .. 1.4 scaling vs player
-};
-
-function defaultFamilies(): Family[] {
-  return [
-    {
-      id: "f1",
-      name: "Famiglia d'Oro",
-      state: "peace",
-      partnershipSectors: [],
-      econ: {
-        cash: 2500,
-        respect: 200,
-        members: 24,
-        weapons: 2,
-        vehicles: 1,
-        tier: "normal",
-      },
-      econFactor: 1.0,
-    },
-    {
-      id: "f2",
-      name: "Famiglia del Vino",
-      state: "peace",
-      partnershipSectors: [],
-      econ: {
-        cash: 1800,
-        respect: 160,
-        members: 20,
-        weapons: 1,
-        vehicles: 1,
-        tier: "normal",
-      },
-      econFactor: 0.9,
-    },
-    {
-      id: "f3",
-      name: "Famiglia Smeraldo",
-      state: "peace",
-      partnershipSectors: [],
-      econ: {
-        cash: 3000,
-        respect: 220,
-        members: 26,
-        weapons: 2,
-        vehicles: 2,
-        tier: "normal",
-      },
-      econFactor: 1.1,
-    },
-  ];
-}
-
-// familyMultiplierForGenerator imported from domain/economy
-
-// familyRespectMultiplier imported from domain/economy
-
-// Compute total war power from equipped weapons
-function computeWarPower(state: SaveState): number {
-  const inv = state.inventory || { weapons: [], vehicles: [], contracts: 0 };
-  const eq = state.equipped || {};
-  let power = 0;
-  Object.values(eq).forEach((wid) => {
-    if (!wid) return;
-    const item = inv.weapons.find((w) => w.id === wid);
-    if (item) power += item.bonusPower;
-  });
-  return power;
-}
-
-// Simulate other families' economies to keep pacing with player
-function simulateFamiliesEconomy(
-  state: SaveState,
-  dt: number,
-  playerCashPerSec: number
-): Family[] {
-  const fams = state.families.map((f) => ({ ...f }));
-  const avgWeaponPrice = 4000;
-  const avgVehiclePrice = 9000;
-  fams.forEach((f, idx) => {
-    const econ = f.econ || {
-      cash: 0,
-      respect: 0,
-      members: 10,
-      weapons: 0,
-      vehicles: 0,
-      tier: "normal",
-    };
-    const factor = Math.max(
-      0.6,
-      Math.min(1.4, f.econFactor ?? 0.9 + 0.1 * idx)
-    );
-    let mult = 1;
-    if (f.state === "war") mult *= 1.15;
-    if (f.state === "partnership") mult *= 1.08;
-    const noise = (Math.random() - 0.5) * 0.1; // +/-5%
-    const inflow = Math.max(0, playerCashPerSec * factor * mult * (1 + noise));
-    // Basic cash dynamics
-    econ.cash += inflow * dt;
-
-    // Occasional random events (gain or loss)
-    if (Math.random() < 0.003 * dt) {
-      const good = Math.random() < 0.55;
-      if (good) {
-        econ.cash += 2000 + Math.random() * 4000;
-        econ.respect += 10 + Math.random() * 15;
-      } else {
-        econ.cash = Math.max(0, econ.cash - (1000 + Math.random() * 5000));
-        econ.respect = Math.max(0, econ.respect - (10 + Math.random() * 20));
-      }
-    }
-
-    // Spend cash to acquire weapons/vehicles
-    if (econ.cash > avgWeaponPrice * 1.2 && Math.random() < 0.004 * dt) {
-      econ.cash -= avgWeaponPrice;
-      econ.weapons += 1;
-    }
-    if (econ.cash > avgVehiclePrice * 1.2 && Math.random() < 0.0025 * dt) {
-      econ.cash -= avgVehiclePrice;
-      econ.vehicles += 1;
-    }
-
-    // Members growth/decay
-    const memberDrift = (0.02 + econ.respect / 10000) * dt; // ~slow growth with respect
-    if (Math.random() < memberDrift) econ.members += 1;
-    if (Math.random() < 0.005 * dt && econ.members > 5) econ.members -= 1;
-
-    // Respect drifts slightly toward player's trend
-    econ.respect = Math.max(
-      0,
-      econ.respect +
-        (Math.log10(1 + playerCashPerSec) * 0.05 - state.heat * 0.001) * dt
-    );
-
-    // Bankruptcy detection
-    if (
-      econ.cash <= 0 &&
-      econ.respect < 50 &&
-      econ.members < 8 &&
-      Math.random() < 0.001 * dt
-    ) {
-      econ.tier = "bankrupt";
-      econ.cash = 0;
-      econ.weapons = Math.max(0, Math.floor(econ.weapons * 0.5));
-      econ.vehicles = Math.max(0, Math.floor(econ.vehicles * 0.5));
-    } else if (econ.tier === "bankrupt" && Math.random() < 0.002 * dt) {
-      // chance to recover from bankruptcy
-      econ.tier = "normal";
-      econ.respect += 20;
-    }
-
-    f.econ = econ;
-  });
-
-  // Determine boss family relative to player score
-  const playerScore = computeCompositePower(state);
-  let maxScore = playerScore;
-  const scores: number[] = fams.map((f) => computeFamilyScore(f));
-  scores.forEach((s) => {
-    if (s > maxScore) maxScore = s;
-  });
-  // Set tiers: one boss if significantly higher than player
-  let bossSet = false;
-  fams.forEach((f, i) => {
-    if (!f.econ) return;
-    if (!bossSet && scores[i] > playerScore * 1.35) {
-      f.econ.tier = "boss";
-      bossSet = true;
-    } else if (f.econ.tier !== "bankrupt") {
-      f.econ.tier = "normal";
-    }
-  });
-
-  return fams;
-}
-
-function computeFamilyScore(f: Family): number {
-  const e = f.econ || {
-    cash: 0,
-    respect: 0,
-    members: 0,
-    weapons: 0,
-    vehicles: 0,
-  };
-  return (
-    e.cash / 10000 +
-    e.respect / 500 +
-    e.members / 50 +
-    e.weapons * 2 +
-    e.vehicles * 1.5
-  );
-}
-
-function computeCompositePower(state: SaveState): number {
-  const inv = state.inventory || { weapons: [], vehicles: [], contracts: 0 };
-  const staffCount = state.staff.length;
-  return (
-    state.cash / 10000 +
-    state.respect / 500 +
-    staffCount / 50 +
-    inv.weapons.length * 2 +
-    inv.vehicles.length * 1.5
-  );
 }
 
 // ----------------------------

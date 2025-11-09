@@ -1,6 +1,6 @@
 import React from "react";
 import type { Family, SaveState } from "../domain/types";
-import { formatNumber } from "../domain/format";
+import { formatNumberUI } from "../domain/format";
 import { computeCompositePower, computeFamilyScore } from "../domain/power";
 
 interface FamiliesIntelProps {
@@ -38,8 +38,8 @@ const FamiliesIntel: React.FC<FamiliesIntelProps> = ({
           <div>
             <div className="font-semibold text-yellow-600">{f.name}</div>
             <div className="text-xs text-zinc-300 flex gap-3 mt-1">
-              <span>💰 {formatNumber(e.cash)}</span>
-              <span>🤝 {formatNumber(e.respect)}</span>
+              <span>💰 {formatNumberUI(e.cash)}</span>
+              <span>🤝 {formatNumberUI(e.respect)}</span>
               <span>👥 {Math.floor(e.members)}</span>
               <span>🔫 {e.weapons}</span>
               <span>🚗 {e.vehicles}</span>
