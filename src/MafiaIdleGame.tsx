@@ -11,12 +11,12 @@ import type {
 } from "./domain/types";
 import {
   computeWarPower,
-  //simulateFamiliesEconomy,
+  simulateFamiliesEconomy,
   //computeFamilyScore,
   //computeCompositePower,
 } from "./domain/family";
 
-import { loadSave } from "./domain/save";
+import { loadSave, saveGame } from "./domain/save";
 
 import WarModal from "./WarModal";
 import TopBar from "./components/TopBar";
@@ -244,6 +244,7 @@ export default function MafiaIdleRedesign() {
   ]);
 
   const stateRef = useRef(state);
+  const lastAutoSaveMs = useRef<number>(Date.now());
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
@@ -268,30 +269,51 @@ export default function MafiaIdleRedesign() {
   useGameLoop((dt) => {
     const clampedDt = Math.min(Math.max(dt, 0), 60);
 
-    // 1) Mise à jour du state métier via la fonction pure
-    setState((prev) => applyTick(prev, clampedDt));
+    // 1) Économie joueur (+ familles) — calculé hors du setState
+    const prev = stateRef.current;
+    const s1 = applyTick(prev, clampedDt);
+    const playerCashPerSec = computeProduction(s1).cashPerSec;
+    const familiesNext = simulateFamiliesEconomy(
+      s1,
+      clampedDt,
+      playerCashPerSec
+    );
+    const next: SaveState = { ...s1, families: familiesNext };
 
-    // 2) Mise à jour de l'animation "top fill" (UI, non persisté)
-    setActionProgress((prev: Record<GeneratorKey, number>) => {
-      const updated: Record<GeneratorKey, number> = { ...prev };
+    // 2) Commit du nouvel état
+    setState(next);
 
-      const gens = Object.keys(stateRef.current.gens) as GeneratorKey[];
-      // max des revenus pour normaliser la vitesse de progression du fill
+    // 3) Progression visuelle des cartes (UI uniquement)
+    setActionProgress((prevProg: Record<GeneratorKey, number>) => {
+      const updated: Record<GeneratorKey, number> = { ...prevProg };
+
+      const gens = Object.keys(next.gens) as GeneratorKey[];
       const maxRev = Math.max(
-        ...gens.map((key) => revenuePerSecForKey(stateRef.current, key) || 0),
+        ...gens.map((key) => revenuePerSecForKey(next, key) || 0),
         1
       );
 
       gens.forEach((key) => {
-        const rev = revenuePerSecForKey(stateRef.current, key);
+        const rev = revenuePerSecForKey(next, key);
         const speed = (rev / maxRev) * (clampedDt / TOP_FILL_TIME);
-        let val = (prev[key] ?? 0) + speed;
+        let val = (prevProg[key] ?? 0) + speed;
         val = val - Math.floor(val);
         updated[key] = clamp(val, 0, 0.999999);
       });
 
       return updated;
     });
+
+    // 4) Autosave throttlé (~1s)
+    const nowMs = Date.now();
+    if (nowMs - lastAutoSaveMs.current >= 1000) {
+      lastAutoSaveMs.current = nowMs;
+      try {
+        saveGame(next);
+      } catch (e) {
+        console.warn("Autosave failed:", e);
+      }
+    }
   }, 250);
 
   // Random events scheduler
