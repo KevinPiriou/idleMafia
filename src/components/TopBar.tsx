@@ -1,5 +1,6 @@
 import { useGameStore, selectBuffActive } from "../store/root";
 import { formatNumber } from "../domain/format";
+import type { SaveState } from "../domain/types";
 
 type StatBoxProps = {
   label: string;
@@ -41,14 +42,7 @@ function StatBox({
 }
 
 export type TopBarProps = {
-  state: {
-    level: number;
-    prestigeMult: number;
-    families: Array<{
-      state: "peace" | "war" | "partnership";
-    }>;
-    tempGlobalBuffUntil?: number;
-  };
+  state: SaveState;
   muted: boolean;
   setMuted: (muted: boolean) => void;
   setShowOptionsModal: (show: boolean) => void;
@@ -56,6 +50,8 @@ export type TopBarProps = {
   cashTooltipContent?: React.ReactNode;
   respectTooltipContent?: React.ReactNode;
   heatTooltipContent?: React.ReactNode;
+  saveVersion?: number;
+  migratedFrom?: number | null;
 };
 
 export default function TopBar({
@@ -67,6 +63,8 @@ export default function TopBar({
   cashTooltipContent,
   respectTooltipContent,
   heatTooltipContent,
+  saveVersion = 0,
+  migratedFrom = null,
 }: TopBarProps) {
   // Store selectors (HUD wiring)
   const cashSel = useGameStore((s) => s.cash);
@@ -175,6 +173,27 @@ export default function TopBar({
                 +50% toutes filières • {remain}
               </span>
             )}
+            <div className="ml-2 flex items-center gap-2">
+              <span
+                className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold
+               bg-yellow-600/20 border border-yellow-500/40 text-yellow-300"
+                title="Version de sauvegarde"
+              >
+                v{saveVersion}
+              </span>
+
+              {typeof migratedFrom === "number" &&
+                migratedFrom > 0 &&
+                migratedFrom !== saveVersion && (
+                  <span
+                    className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold
+                   bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 animate-pulse"
+                    title={`Migré depuis v${migratedFrom}`}
+                  >
+                    migré v{migratedFrom} → v{saveVersion}
+                  </span>
+                )}
+            </div>
           </div>
         );
       })()}

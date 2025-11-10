@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 
 import type {
   GeneratorKey,
@@ -16,7 +22,12 @@ import {
   //computeCompositePower,
 } from "./domain/family";
 
-import { loadSave, saveGame } from "./domain/save";
+import {
+  loadSave,
+  saveGame,
+  getLastMigratedFrom,
+  SAVE_VERSION,
+} from "./domain/save";
 
 import WarModal from "./WarModal";
 import TopBar from "./components/TopBar";
@@ -28,7 +39,6 @@ import RelationsModal from "./components/RelationsModal";
 import TensionModal from "./components/TensionModal";
 import Modal from "./Modal";
 import EventModal from "./components/EventModal";
-
 import { Card } from "./components/ui/Card";
 import { ActionCard } from "./components/ui/ActionCard";
 import { ParticleCanvas } from "./components/ui/ParticleCanvas";
@@ -45,35 +55,30 @@ import { TUTORIAL_STEPS } from "./domain/tutorial";
 import { useAudioEngine } from "./hooks/useAudioEngine";
 import { useGameLoop } from "./hooks/useGameLoop";
 import { usePlayerActions } from "./hooks/usePlayerActions";
-
 import {
   clamp,
   TOP_FILL_TIME,
   TIME_XP_RATE,
   XP_PER_CASH_PER_SEC,
 } from "./domain/balance";
-
 import {
   discountedGenCost,
   staffMultiplierForGenerator,
-  prodPerUnit,
   computeProduction,
-  //revenuePerSecForKey,
   xpForLevel,
 } from "./domain/economy";
 import { applyTick } from "./domain/sim/tick";
-import { selectProduction, selectRevenuePerSecForKey } from "./store/selectors";
-
-//import { computeXpDelta, applyLevelUps } from "./domain/progression";
+import {
+  selectProduction,
+  selectRevenuePerSecForKey,
+  selectGenSorted,
+} from "./store/selectors";
 import { pickRarity } from "./domain/events";
 import { applyInvestment } from "./domain/investments";
-
-// (RandomEventDef imported in domain/events types; not needed here)
 import { useGameStore, createInitialFromSave } from "./store/root";
 import { prestigeGain } from "./domain/prestige";
 import { generateItemId } from "./domain/item";
 
-// Lightweight type to receive WarModal results without importing internals
 type WarResolve = {
   familyId: string;
   action: "assassination" | "kidnapping" | "intimidation";
@@ -96,8 +101,6 @@ type WarResolve = {
   narrative: string[];
 };
 
-// xpForLevel now imported from domain/economy
-
 const formatNumber = (n: number) => {
   if (!isFinite(n)) return "∞";
   const abs = Math.abs(n);
@@ -107,18 +110,6 @@ const formatNumber = (n: number) => {
   if (abs >= 1e3) return (n / 1e3).toFixed(2) + " k";
   return n.toFixed(2);
 };
-
-// genCost and discountedGenCost imported from domain/economy
-
-// totalLocalMult and totalGlobalMult imported from domain/economy
-
-// prodPerUnit imported from domain/economy
-
-// computeProduction imported from domain/economy
-
-// computeTick imported from domain/economy
-
-// revenuePerSecForKey imported from domain/economy
 
 // ----------------------------
 // Composant principal
@@ -169,6 +160,7 @@ export default function MafiaIdleRedesign() {
   }>(null);
 
   const [tutorialActive, setTutorialActive] = useState(false);
+  const [migratedFrom, setMigratedFrom] = useState<number | null>(null);
 
   const [actionProgress, setActionProgress] = useState<
     Record<GeneratorKey, number>
@@ -265,6 +257,9 @@ export default function MafiaIdleRedesign() {
   useEffect(() => {
     audio.setVolume(volume / 100);
   }, [audio, volume]);
+  useEffect(() => {
+    setMigratedFrom(getLastMigratedFrom());
+  }, []);
   // Sauvegarde sur fermeture / tab caché (exactement comme l’ancien comportement)
   useEffect(() => {
     const handleImmediateSave = () => {
@@ -359,17 +354,19 @@ export default function MafiaIdleRedesign() {
 
   const prodSummary = useMemo(() => selectProduction(state), [state]);
 
-  const genSorted = useMemo(() => {
-    const entries = (Object.keys(state.gens) as GeneratorKey[]).map((key) => {
-      const g = state.gens[key];
-      const unit = prodPerUnit(state, key);
-      const revenue = selectRevenuePerSecForKey(state, key);
-      return { key, g, unit, revenue };
+  const genSorted = useMemo(() => selectGenSorted(state), [state]);
+  const assignedByGen = useMemo(() => {
+    // Crée un record { genKey -> tableau de staff } pour éviter de filtrer à chaque carte
+    const map = {} as Record<GeneratorKey, SaveState["staff"]>;
+    (Object.keys(state.gens) as GeneratorKey[]).forEach((k) => {
+      map[k] = [];
     });
-    entries.sort((a, b) => b.revenue - a.revenue);
-    const maxRevenue = Math.max(0.0001, ...entries.map((e) => e.revenue));
-    return { entries, maxRevenue };
-  }, [state]);
+    for (const member of state.staff) {
+      const k = state.assignments[member.id] as GeneratorKey | undefined;
+      if (k && map[k]) map[k].push(member);
+    }
+    return map;
+  }, [state.gens, state.staff, state.assignments]);
 
   // Tooltips breakdowns
   const cashTooltipContent = useMemo(() => {
@@ -497,29 +494,30 @@ export default function MafiaIdleRedesign() {
   const mockCharacters = state.staff;
 
   // Helpers: tension and locks
-  const incTension = (amount: number) => {
-    setState((prev) => {
-      const t = clamp((prev.tension || 0) + amount, 0, 100);
-      const next = { ...prev, tension: t };
-      if (t >= 100) {
-        // Trigger sanction modal with high bail cost proportional to progress
-        const bail = Math.max(5000, Math.floor(prev.cash * 0.35));
-        setTensionModal({ cost: bail });
-      }
-      return next;
-    });
-  };
-  const isActionLocked = () => {
+  const incTension = useCallback(
+    (amount: number) => {
+      setState((prev) => {
+        const t = clamp((prev.tension || 0) + amount, 0, 100);
+        if (t >= 100) {
+          // Trigger sanction modal with high bail cost proportional to progress
+          const bail = Math.max(5000, Math.floor(prev.cash * 0.35));
+          setTensionModal({ cost: bail });
+        }
+        return { ...prev, tension: t };
+      });
+    },
+    [setTensionModal, setState]
+  );
+  const isActionLocked = useCallback(() => {
     const cur = stateRef.current;
     if (cur.actionLockedUntilHeat != null) {
-      // Heat-based sanction takes precedence: if satisfied, unlock immediately
       if (cur.heat > cur.actionLockedUntilHeat) return true;
       return false;
     }
     const until = cur.disabledUntil || 0;
     if (Date.now() < until) return true;
     return false;
-  };
+  }, []);
 
   const { buy, buyMax, buyUpgrade, bribe, buyPassiveInfluence, doPrestige } =
     usePlayerActions(stateRef, setState, incTension, isActionLocked);
@@ -663,43 +661,56 @@ export default function MafiaIdleRedesign() {
   };
 
   // Drag & Drop handlers
-  const onStaffDragStart = (e: React.DragEvent, charId: string) => {
-    if (isActionLocked()) return;
-    e.dataTransfer.setData("text/plain", charId);
-    e.dataTransfer.effectAllowed = "move";
-  };
-  const onDropStaffToGen = (key: GeneratorKey, e: React.DragEvent) => {
-    if (isActionLocked()) return;
+  const onStaffDragStart = useCallback(
+    (e: React.DragEvent, charId: string) => {
+      if (isActionLocked()) return;
+      e.dataTransfer.setData("text/plain", charId);
+      e.dataTransfer.effectAllowed = "move";
+    },
+    [isActionLocked]
+  );
+  const onDropStaffToGen = useCallback(
+    (key: GeneratorKey, e: React.DragEvent) => {
+      if (isActionLocked()) return;
+      e.preventDefault();
+      const id = e.dataTransfer.getData("text/plain");
+      if (!id) return;
+      setState((prev) => ({
+        ...prev,
+        assignments: { ...prev.assignments, [id]: key },
+      }));
+      if (!stateRef.current.gens[key].legal) incTension(5);
+    },
+    [isActionLocked, incTension]
+  );
+  const onDragOverGen = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    const id = e.dataTransfer.getData("text/plain");
-    if (!id) return;
-    setState((prev) => ({
-      ...prev,
-      assignments: { ...prev.assignments, [id]: key },
-    }));
-    // Assigning to illegal ops increases tension slightly
-    if (!stateRef.current.gens[key].legal) incTension(5);
-  };
-  const onDragOverGen = (e: React.DragEvent) => {
-    e.preventDefault();
-  };
+  }, []);
 
   // Staff hover tooltip helpers (position in wrapper coordinates to avoid clipping)
-  const onStaffMouseEnter = (id: string) => (e: React.MouseEvent) => {
-    const rect = wrapperRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const x = (e.clientX - rect.left) / scale;
-    const y = (e.clientY - rect.top) / scale;
-    setStaffTooltip({ id, x, y });
-  };
-  const onStaffMouseMove = (id: string) => (e: React.MouseEvent) => {
-    const rect = wrapperRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const x = (e.clientX - rect.left) / scale;
-    const y = (e.clientY - rect.top) / scale;
-    setStaffTooltip({ id, x, y });
-  };
-  const onStaffMouseLeave = () => setStaffTooltip(null);
+  const onStaffMouseEnter = useCallback(
+    (id: string) => (e: React.MouseEvent) => {
+      const rect = wrapperRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const x = (e.clientX - rect.left) / scale;
+      const y = (e.clientY - rect.top) / scale;
+      setStaffTooltip({ id, x, y });
+    },
+    [scale]
+  );
+
+  const onStaffMouseMove = useCallback(
+    (id: string) => (e: React.MouseEvent) => {
+      const rect = wrapperRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const x = (e.clientX - rect.left) / scale;
+      const y = (e.clientY - rect.top) / scale;
+      setStaffTooltip({ id, x, y });
+    },
+    [scale]
+  );
+
+  const onStaffMouseLeave = useCallback(() => setStaffTooltip(null), []);
 
   // -------- Case opening (Contrats) --------
   // rarityWeights and pickRarity imported from domain/events
@@ -807,6 +818,8 @@ export default function MafiaIdleRedesign() {
             cashTooltipContent={cashTooltipContent}
             respectTooltipContent={respectTooltipContent}
             heatTooltipContent={heatTooltipContent}
+            saveVersion={state.version ?? SAVE_VERSION}
+            migratedFrom={migratedFrom}
           />
         </div>
 
@@ -868,11 +881,9 @@ export default function MafiaIdleRedesign() {
                 fullHeight
               >
                 <div className="grid md:grid-cols-2 gap-4 flex-1 min-h-0 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-yellow-600 scrollbar-track-black/30">
-                  {genSorted.entries.map(({ g, unit, revenue }) => {
-                    const assigned = state.staff.filter(
-                      (s) => state.assignments[s.id] === g.key
-                    );
-                    const staffMult = staffMultiplierForGenerator(state, g.key);
+                  {genSorted.entries.map(({ key, g, unit, revenue }) => {
+                    const assigned = assignedByGen[key] ?? [];
+                    const staffMult = staffMultiplierForGenerator(state, key);
                     const staffBonusPct = Math.round((staffMult - 1) * 100);
                     const c1 = discountedGenCost(state, g, 1);
                     const c10 = discountedGenCost(state, g, 10);
@@ -883,16 +894,16 @@ export default function MafiaIdleRedesign() {
                         cash={state.cash}
                         cost1={c1}
                         cost10={c10}
-                        onBuyOne={() => buy(g.key, 1)}
-                        onBuyTen={() => buy(g.key, 10)}
-                        onBuyMax={() => buyMax(g.key)}
+                        onBuyOne={() => buy(key, 1)}
+                        onBuyTen={() => buy(key, 10)}
+                        onBuyMax={() => buyMax(key)}
                         prodPerUnit={unit}
                         revenuePerSec={revenue}
-                        progress={actionProgress[g.key] ?? 0}
+                        progress={actionProgress[key] ?? 0}
                         maxRevenue={genSorted.maxRevenue}
                         assigned={assigned}
                         staffBonusPct={staffBonusPct}
-                        onDropStaff={(e) => onDropStaffToGen(g.key, e)}
+                        onDropStaff={(e) => onDropStaffToGen(key, e)}
                         onDragOver={onDragOverGen}
                       />
                     );

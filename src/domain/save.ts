@@ -7,6 +7,12 @@ import { defaultFamilies } from "./familyData";
 export const SAVE_KEY = "mafia-idle-redesign-v1";
 export const SAVE_VERSION = 2;
 
+// Mémo en mémoire de la version source lors d'une migration (non persisté)
+let LAST_MIGRATED_FROM: number | null = null;
+export function getLastMigratedFrom(): number | null {
+  return LAST_MIGRATED_FROM;
+}
+
 /** Construit un SaveState par défaut, cohérent avec le contenu actuel */
 export function createDefaultSave(): SaveState {
   // defaultGenerators peut renvoyer un array ou un record selon tes versions — on gère les deux
@@ -125,14 +131,22 @@ export function loadSave(): SaveState {
     if (!rawStr) {
       const fresh = createDefaultSave();
       localStorage.setItem(SAVE_KEY, JSON.stringify(fresh));
+      LAST_MIGRATED_FROM = null;
       return fresh;
     }
+
     const parsed = JSON.parse(rawStr) as Partial<SaveState>;
+    const prevVersion = Number(parsed.version ?? 1);
     const migrated = migrateSaveState(parsed);
-    // Write-back si la version a changé
-    if (parsed.version !== SAVE_VERSION) {
+
+    // Write-back si la version a changé + mémoriser l’info de migration
+    if (prevVersion !== SAVE_VERSION) {
+      LAST_MIGRATED_FROM = prevVersion;
       localStorage.setItem(SAVE_KEY, JSON.stringify(migrated));
+    } else {
+      LAST_MIGRATED_FROM = null;
     }
+
     return migrated;
   } catch (e) {
     console.warn("loadSave failed, creating fresh save:", e);
@@ -142,6 +156,7 @@ export function loadSave(): SaveState {
     } catch {
       /* ignore write errors */
     }
+    LAST_MIGRATED_FROM = null;
     return fresh;
   }
 }
@@ -159,4 +174,6 @@ export function saveGame(state: SaveState): void {
     console.warn("saveGame failed:", e);
   }
 }
+
+// Compat rétro
 export { createDefaultSave as blankSave };
