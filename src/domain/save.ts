@@ -266,12 +266,14 @@ export const loadSave = (): SaveState => {
     Object.values(parsed.upgrades || {}).forEach((u) => {
       if (upgs[u.id]) upgs[u.id] = { ...upgs[u.id], ...u };
     });
+    // Migrate new fields safely
     const base = blankSave();
     return {
       ...base,
       ...parsed,
       gens,
       upgrades: upgs,
+      // Ensure numeric fields are sane after migration
       prestigeMult:
         typeof (parsed as SaveState).prestigeMult === "number"
           ? (parsed as SaveState).prestigeMult

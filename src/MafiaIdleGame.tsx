@@ -1,23 +1,21 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import confetti from "canvas-confetti";
+
 import type {
   GeneratorKey,
   Generator,
-  Upgrade,
   SaveState,
-  StaffMember,
   Rarity,
   WeaponItem,
   VehicleItem,
   FamilyState,
 } from "./domain/types";
 import {
-  defaultFamilies,
   computeWarPower,
   simulateFamiliesEconomy,
   //computeFamilyScore,
   //computeCompositePower,
 } from "./domain/family";
+import { loadSave, saveGame } from "./domain/save";
 
 import WarModal from "./WarModal";
 import TopBar from "./components/TopBar";
@@ -29,27 +27,29 @@ import RelationsModal from "./components/RelationsModal";
 import TensionModal from "./components/TensionModal";
 import Modal from "./Modal";
 import EventModal from "./components/EventModal";
-import { Avatar } from "./components/ui/Avatar";
+
 import { Card } from "./components/ui/Card";
 import { ActionCard } from "./components/ui/ActionCard";
 import { ParticleCanvas } from "./components/ui/ParticleCanvas";
 import { GeneratorCard } from "./components/ui/GeneratorCard";
 import { StaffListWithPagination } from "./components/ui/StaffListWithPagination";
 import { InvestmentsPanel } from "./components/InvestmentPanel";
+import { CaseOpeningModal } from "./components/CaseOpeningModal";
+import { StaffTooltip } from "./components/StaffTooltip";
+import { MainMenu } from "./components/MainMenu";
+import { UpgradesModal } from "./components/UpgradesModal";
+import { InfluenceModal } from "./components/InfluenceModal";
 import { useAudioEngine } from "./hooks/useAudioEngine";
-import { generateMafiaFullName } from "./utils/nameGenerator";
+import { usePlayerActions } from "./hooks/usePlayerActions";
+
 import {
   clamp,
   TOP_FILL_TIME,
   TIME_XP_RATE,
   XP_PER_CASH_PER_SEC,
-  XP_PER_DOLLAR_SPENT,
-  XP_PER_UPGRADE_DOLLAR,
-  XP_PER_INFLUENCE_DOLLAR,
 } from "./domain/balance";
 import {
   discountedGenCost,
-  staffBonusFor,
   staffMultiplierForGenerator,
   prodPerUnit,
   computeProduction,
@@ -59,9 +59,12 @@ import {
 } from "./domain/economy";
 //import { computeXpDelta, applyLevelUps } from "./domain/progression";
 import { pickRarity } from "./domain/events";
+import { applyInvestment } from "./domain/investments";
 
 // (RandomEventDef imported in domain/events types; not needed here)
 import { useGameStore, createInitialFromSave } from "./store/root";
+import { prestigeGain } from "./domain/prestige";
+import { generateItemId } from "./domain/utils";
 
 // Lightweight type to receive WarModal results without importing internals
 type WarResolve = {
@@ -100,226 +103,6 @@ const formatNumber = (n: number) => {
 
 // genCost and discountedGenCost imported from domain/economy
 
-const defaultGenerators = (): Record<GeneratorKey, Generator> => ({
-  pickpocket: {
-    key: "pickpocket",
-    name: "Pickpockets",
-    icon: "🎯",
-    baseCost: 10,
-    costGrowth: 1.12,
-    baseProd: 0.6,
-    baseHeat: 0.02,
-    legal: false,
-    owned: 0,
-  },
-  racket: {
-    key: "racket",
-    name: "Rackets",
-    icon: "💰",
-    baseCost: 120,
-    costGrowth: 1.13,
-    baseProd: 6,
-    baseHeat: 0.06,
-    legal: false,
-    owned: 0,
-  },
-  club: {
-    key: "club",
-    name: "Boîtes de nuit",
-    icon: "🍸",
-    baseCost: 1600,
-    costGrowth: 1.14,
-    baseProd: 40,
-    baseHeat: 0.12,
-    legal: false,
-    owned: 0,
-  },
-  casino: {
-    key: "casino",
-    name: "Casinos",
-    icon: "🎰",
-    baseCost: 24000,
-    costGrowth: 1.16,
-    baseProd: 220,
-    baseHeat: 0.22,
-    legal: false,
-    owned: 0,
-  },
-  olive: {
-    key: "olive",
-    name: "Huile d'olive",
-    icon: "🫒",
-    baseCost: 300,
-    costGrowth: 1.12,
-    baseProd: 4,
-    baseHeat: 0.0,
-    legal: true,
-    owned: 0,
-  },
-  bar: {
-    key: "bar",
-    name: "Bars",
-    icon: "🍷",
-    baseCost: 900,
-    costGrowth: 1.13,
-    baseProd: 12,
-    baseHeat: 0.01,
-    legal: true,
-    owned: 0,
-  },
-  grocery: {
-    key: "grocery",
-    name: "Épiceries",
-    icon: "🛒",
-    baseCost: 2200,
-    costGrowth: 1.14,
-    baseProd: 25,
-    baseHeat: 0.005,
-    legal: true,
-    owned: 0,
-  },
-});
-
-const defaultUpgrades = (): Record<string, Upgrade> => ({
-  u_pp_1: {
-    id: "u_pp_1",
-    label: "Doigts agiles",
-    desc: "+100% pickpockets",
-    target: "pickpocket",
-    cost: 250,
-    owned: false,
-    mult: 2,
-  },
-  u_rk_1: {
-    id: "u_rk_1",
-    label: "Bâtons",
-    desc: "+100% rackets",
-    target: "racket",
-    cost: 1800,
-    owned: false,
-    mult: 2,
-  },
-  u_cb_1: {
-    id: "u_cb_1",
-    label: "DJ maison",
-    desc: "+100% boîtes",
-    target: "club",
-    cost: 12000,
-    owned: false,
-    mult: 2,
-  },
-  u_cs_1: {
-    id: "u_cs_1",
-    label: "Croupiers",
-    desc: "+100% casinos",
-    target: "casino",
-    cost: 80000,
-    owned: false,
-    mult: 2,
-  },
-});
-
-const blankSave = (): SaveState => ({
-  cash: 10,
-  respect: 0,
-  heat: 0,
-  gens: defaultGenerators(),
-  upgrades: defaultUpgrades(),
-  prestigeMult: 1,
-  prestigePoints: 0,
-  heatMitigationPerSec: 0,
-  lastSave: Date.now(),
-  version: 2,
-  level: 1,
-  xp: 0,
-  staff: defaultStaff(),
-  assignments: {},
-  families: defaultFamilies(),
-  tempGlobalBuffUntil: undefined,
-  tension: 0,
-  disabledUntil: undefined,
-  actionLockedUntilHeat: undefined,
-  inventory: { weapons: [], vehicles: [], contracts: 0 },
-  equipped: {},
-  permaGlobalMult: 1,
-  costDiscount: 0,
-  investmentsPurchased: {},
-});
-
-const STORAGE_KEY = "mafia-idle-redesign-v1";
-
-const loadSave = (): SaveState => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return blankSave();
-    const parsed = JSON.parse(raw) as SaveState;
-    const gens = defaultGenerators();
-    const upgs = defaultUpgrades();
-    Object.values(parsed.gens || {}).forEach((g) => {
-      if (gens[g.key]) gens[g.key] = { ...gens[g.key], ...g };
-    });
-    Object.values(parsed.upgrades || {}).forEach((u) => {
-      if (upgs[u.id]) upgs[u.id] = { ...upgs[u.id], ...u };
-    });
-    // Migrate new fields safely
-    const base = blankSave();
-    return {
-      ...base,
-      ...parsed,
-      gens,
-      upgrades: upgs,
-      // Ensure numeric fields are sane after migration
-      prestigeMult:
-        typeof (parsed as SaveState).prestigeMult === "number"
-          ? (parsed as SaveState).prestigeMult
-          : base.prestigeMult,
-      heatMitigationPerSec:
-        typeof (parsed as SaveState).heatMitigationPerSec === "number"
-          ? (parsed as SaveState).heatMitigationPerSec
-          : base.heatMitigationPerSec,
-      staff: parsed.staff && parsed.staff.length ? parsed.staff : base.staff,
-      assignments: parsed.assignments || base.assignments,
-      families:
-        parsed.families && parsed.families.length
-          ? parsed.families
-          : base.families,
-      tempGlobalBuffUntil: parsed.tempGlobalBuffUntil,
-      tension:
-        typeof parsed.tension === "number" ? parsed.tension : base.tension,
-      disabledUntil: parsed.disabledUntil,
-      actionLockedUntilHeat: parsed.actionLockedUntilHeat,
-      inventory: parsed.inventory || base.inventory,
-      equipped: parsed.equipped || base.equipped,
-      permaGlobalMult:
-        typeof (parsed as SaveState).permaGlobalMult === "number"
-          ? (parsed as SaveState).permaGlobalMult
-          : base.permaGlobalMult,
-      costDiscount:
-        typeof (parsed as SaveState).costDiscount === "number"
-          ? (parsed as SaveState).costDiscount
-          : base.costDiscount,
-      investmentsPurchased:
-        (parsed as SaveState).investmentsPurchased || base.investmentsPurchased,
-    };
-  } catch (e) {
-    console.warn("Failed to load save:", e);
-    return blankSave();
-  }
-};
-
-const saveGame = (state: SaveState) => {
-  try {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ ...state, lastSave: Date.now() })
-    );
-  } catch (e) {
-    console.warn("Failed to save game:", e);
-  }
-};
-
-const prestigeGain = (respect: number) => Math.floor(Math.sqrt(respect) / 50);
-
 // totalLocalMult and totalGlobalMult imported from domain/economy
 
 // prodPerUnit imported from domain/economy
@@ -329,43 +112,6 @@ const prestigeGain = (respect: number) => Math.floor(Math.sqrt(respect) / 50);
 // computeTick imported from domain/economy
 
 // revenuePerSecForKey imported from domain/economy
-
-function defaultStaff(): StaffMember[] {
-  return [
-    {
-      id: "1",
-      name: 'Marco "Le Rat" Rossi',
-      role: "Soldat",
-      family: "Famiglia d'Oro",
-      stats: [80, 60, 40, 70],
-    },
-    {
-      id: "2",
-      name: 'Luca "La Main" Ferrari',
-      role: "Capieri",
-      family: "Famiglia del Vino",
-      stats: [90, 85, 75, 95],
-    },
-    {
-      id: "3",
-      name: 'Giovanni "Blade" Conti',
-      role: "Associé",
-      family: "Famiglia Smeraldo",
-      stats: [50, 95, 30, 45],
-    },
-    {
-      id: "4",
-      name: 'Antoine "Le Chat" Dubois',
-      role: "Petite frappe",
-      family: "Famiglia della Notte",
-      stats: [65, 40, 55, 50],
-    },
-  ];
-}
-
-function generateItemId(prefix: string) {
-  return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-}
 
 // ----------------------------
 // Composant principal
@@ -754,189 +500,6 @@ export default function MafiaIdleRedesign() {
     );
   }, [state.gens, state.heatMitigationPerSec]);
 
-  const buy = (key: GeneratorKey, qty = 1) => {
-    if (isActionLocked()) return;
-    const g = stateRef.current.gens[key];
-    const cost = discountedGenCost(stateRef.current, g, qty);
-    if (stateRef.current.cash < cost) return;
-    audio.playCash();
-    setState((prev) => {
-      const next: SaveState = {
-        ...prev,
-        cash: prev.cash - cost,
-        gens: {
-          ...prev.gens,
-          [key]: { ...prev.gens[key], owned: prev.gens[key].owned + qty },
-        },
-      };
-      // XP for spending on generators
-      const xpGain = cost * XP_PER_DOLLAR_SPENT;
-      if (xpGain > 0) {
-        let nxp = (next.xp ?? 0) + xpGain;
-        let nlevel = next.level ?? 1;
-        while (nxp >= xpForLevel(nlevel)) {
-          nxp -= xpForLevel(nlevel);
-          nlevel += 1;
-        }
-        next.xp = nxp;
-        next.level = nlevel;
-      }
-      return next;
-    });
-    // Tension rises slightly when expanding illegal operations
-    if (!stateRef.current.gens[key].legal) incTension(1);
-  };
-
-  const buyMax = (key: GeneratorKey) => {
-    if (isActionLocked()) return;
-    const g = stateRef.current.gens[key];
-    let lo = 0,
-      hi = 100000;
-    while (lo < hi) {
-      const mid = Math.ceil((lo + hi) / 2);
-      const c = discountedGenCost(stateRef.current, g, mid);
-      if (c <= stateRef.current.cash) lo = mid;
-      else hi = mid - 1;
-    }
-    if (lo <= 0) return;
-    const cost = discountedGenCost(stateRef.current, g, lo);
-    audio.playCash();
-    setState((prev) => {
-      const next: SaveState = {
-        ...prev,
-        cash: prev.cash - cost,
-        gens: {
-          ...prev.gens,
-          [key]: { ...prev.gens[key], owned: prev.gens[key].owned + lo },
-        },
-      };
-      const xpGain = cost * XP_PER_DOLLAR_SPENT;
-      if (xpGain > 0) {
-        let nxp = (next.xp ?? 0) + xpGain;
-        let nlevel = next.level ?? 1;
-        while (nxp >= xpForLevel(nlevel)) {
-          nxp -= xpForLevel(nlevel);
-          nlevel += 1;
-        }
-        next.xp = nxp;
-        next.level = nlevel;
-      }
-      return next;
-    });
-    if (!stateRef.current.gens[key].legal) incTension(2);
-  };
-
-  const buyUpgrade = (id: string) => {
-    if (isActionLocked()) return;
-    const u = stateRef.current.upgrades[id];
-    if (!u || u.owned || stateRef.current.cash < u.cost) return;
-    audio.playCash();
-    setState((prev) => {
-      const next: SaveState = {
-        ...prev,
-        cash: prev.cash - u.cost,
-        upgrades: {
-          ...prev.upgrades,
-          [id]: { ...prev.upgrades[id], owned: true },
-        },
-      };
-      const xpGain = u.cost * XP_PER_UPGRADE_DOLLAR;
-      if (xpGain > 0) {
-        let nxp = (next.xp ?? 0) + xpGain;
-        let nlevel = next.level ?? 1;
-        while (nxp >= xpForLevel(nlevel)) {
-          nxp -= xpForLevel(nlevel);
-          nlevel += 1;
-        }
-        next.xp = nxp;
-        next.level = nlevel;
-      }
-      return next;
-    });
-  };
-
-  const bribe = (cashCost: number, respectCost: number, heatReduce: number) => {
-    if (isActionLocked()) return;
-    if (
-      stateRef.current.cash < cashCost ||
-      stateRef.current.respect < respectCost
-    )
-      return;
-    audio.playCash();
-    setState((prev) => {
-      const next: SaveState = {
-        ...prev,
-        cash: prev.cash - cashCost,
-        respect: prev.respect - respectCost,
-        heat: clamp(prev.heat - heatReduce, 0, 100),
-      };
-      const xpGain = cashCost * XP_PER_INFLUENCE_DOLLAR;
-      if (xpGain > 0) {
-        let nxp = (next.xp ?? 0) + xpGain;
-        let nlevel = next.level ?? 1;
-        while (nxp >= xpForLevel(nlevel)) {
-          nxp -= xpForLevel(nlevel);
-          nlevel += 1;
-        }
-        next.xp = nxp;
-        next.level = nlevel;
-      }
-      return next;
-    });
-    incTension(2);
-  };
-
-  // Réseau politique / mitigation passive
-  const buyPassiveInfluence = (
-    cashCost: number,
-    respectCost: number,
-    addMitigationPerSec: number
-  ) => {
-    if (isActionLocked()) return;
-    if (
-      stateRef.current.cash < cashCost ||
-      stateRef.current.respect < respectCost
-    )
-      return;
-    audio.playCash();
-    setState((prev) => {
-      const next: SaveState = {
-        ...prev,
-        cash: prev.cash - cashCost,
-        respect: prev.respect - respectCost,
-        heatMitigationPerSec: prev.heatMitigationPerSec + addMitigationPerSec,
-      };
-      const xpGain = cashCost * XP_PER_INFLUENCE_DOLLAR;
-      if (xpGain > 0) {
-        let nxp = (next.xp ?? 0) + xpGain;
-        let nlevel = next.level ?? 1;
-        while (nxp >= xpForLevel(nlevel)) {
-          nxp -= xpForLevel(nlevel);
-          nlevel += 1;
-        }
-        next.xp = nxp;
-        next.level = nlevel;
-      }
-      return next;
-    });
-  };
-
-  const doPrestige = () => {
-    if (isActionLocked()) return;
-    const gain = prestigeGain(stateRef.current.respect);
-    if (gain <= 0) return;
-    if (!confirm(`Activer l'Omertà pour ${gain} point(s) ?`)) return;
-    audio.playOmerta();
-    setState((prev) => {
-      const newMult = prev.prestigeMult * (1 + gain * 0.1);
-      const s = blankSave();
-      s.prestigeMult = newMult;
-      s.prestigePoints = prev.prestigePoints + gain;
-      saveGame(s);
-      return s;
-    });
-  };
-
   // Mock characters
   const mockCharacters = state.staff;
 
@@ -964,6 +527,9 @@ export default function MafiaIdleRedesign() {
     if (Date.now() < until) return true;
     return false;
   };
+
+  const { buy, buyMax, buyUpgrade, bribe, buyPassiveInfluence, doPrestige } =
+    usePlayerActions(stateRef, setState, incTension, isActionLocked);
 
   // Auto-clear outdated lock flags
   useEffect(() => {
@@ -1141,51 +707,11 @@ export default function MafiaIdleRedesign() {
     <div className="min-h-screen relative text-zinc-100 font-serif">
       {/* Main Menu Overlay */}
       {showMenu && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90">
-          <div className="w-full max-w-md rounded-2xl border-2 border-yellow-600 bg-linear-to-br from-zinc-900 to-zinc-800 p-6 shadow-2xl">
-            <h2 className="text-2xl font-bold text-yellow-400 mb-2 tracking-widest">
-              MAFIA IDLE
-            </h2>
-            <p className="text-sm text-zinc-300 mb-4">
-              Reprenez votre empire ou démarrez une nouvelle partie.
-            </p>
-            <div className="space-y-3">
-              <button
-                className="w-full px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-lg"
-                onClick={() => {
-                  if (
-                    !confirm(
-                      "Démarrer une nouvelle partie ? L'Omertà est conservée."
-                    )
-                  )
-                    return;
-                  setState((prev) => {
-                    const fresh = blankSave();
-                    fresh.prestigeMult = prev.prestigeMult;
-                    fresh.prestigePoints = prev.prestigePoints;
-                    saveGame(fresh);
-                    return fresh;
-                  });
-                  setShowMenu(false);
-                }}
-              >
-                Nouvelle partie
-              </button>
-              <button
-                className="w-full px-4 py-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-lg"
-                onClick={() => setShowMenu(false)}
-              >
-                Reprendre
-              </button>
-              <button
-                className="w-full px-4 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-lg"
-                onClick={() => setShowOptionsModal(true)}
-              >
-                Options
-              </button>
-            </div>
-          </div>
-        </div>
+        <MainMenu
+          setState={setState}
+          setShowMenu={setShowMenu}
+          setShowOptionsModal={setShowOptionsModal}
+        />
       )}
       {/* Background image layer - replace URL to match your mockup */}
       <div
@@ -1455,97 +981,13 @@ export default function MafiaIdleRedesign() {
             | GeneratorKey
             | undefined;
           const assignedGen = assignedKey ? state.gens[assignedKey] : undefined;
-          const force = c.stats[1];
-          const esprit = c.stats[2];
-          const reseau = c.stats[3];
-          const legalPct = Math.round(
-            ((esprit / 100) * 0.1 + (reseau / 100) * 0.05) * 100
-          );
-          const illegalPct = Math.round(
-            ((force / 100) * 0.15 + (reseau / 100) * 0.05) * 100
-          );
-          const currentPct = assignedGen
-            ? Math.round((staffBonusFor(c, assignedGen) - 1) * 100)
-            : null;
           return (
-            <div
-              className="absolute z-50 pointer-events-none"
-              style={{ left: staffTooltip.x + 16, top: staffTooltip.y + 16 }}
-            >
-              <div className="rounded-xl border border-yellow-600/60 bg-black/85 backdrop-blur-sm p-3 shadow-2xl min-w-60">
-                <div className="flex items-center gap-2 mb-2">
-                  <Avatar size={28} name={c.id} />
-                  <div className="text-sm font-semibold truncate">{c.name}</div>
-                </div>
-                <div className="text-[11px] text-zinc-300 mb-2">
-                  <span className="px-1.5 py-0.5 rounded border border-zinc-700 mr-2">
-                    {c.role}
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded border border-zinc-700">
-                    {c.family}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-[11px]">
-                  {[
-                    {
-                      label: "🎭 Charisme",
-                      v: c.stats[0],
-                      color: "from-yellow-600 to-yellow-300",
-                    },
-                    {
-                      label: "💪 Force",
-                      v: c.stats[1],
-                      color: "from-red-600 to-red-400",
-                    },
-                    {
-                      label: "🧠 Esprit",
-                      v: c.stats[2],
-                      color: "from-sky-600 to-sky-400",
-                    },
-                    {
-                      label: "🤝 Réseau",
-                      v: c.stats[3],
-                      color: "from-emerald-600 to-emerald-400",
-                    },
-                  ].map((s, i) => (
-                    <div key={i}>
-                      <div className="flex justify-between">
-                        <span>{s.label}</span>
-                        <span>{s.v}</span>
-                      </div>
-                      <div className="h-1 bg-white/10 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full bg-linear-to-r ${s.color}`}
-                          style={{ width: `${s.v}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-2 text-[11px] text-zinc-300 grid grid-cols-2 gap-2">
-                  <div>Bonus légal potentiel</div>
-                  <div className="text-right text-emerald-400 font-semibold">
-                    +{legalPct}%
-                  </div>
-                  <div>Bonus illégal potentiel</div>
-                  <div className="text-right text-emerald-400 font-semibold">
-                    +{illegalPct}%
-                  </div>
-                  {assignedGen && (
-                    <>
-                      <div>Affecté à</div>
-                      <div className="text-right">
-                        {assignedGen.icon} {assignedGen.name}
-                      </div>
-                      <div>Bonus actuel</div>
-                      <div className="text-right text-yellow-400 font-semibold">
-                        +{currentPct}%
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
+            <StaffTooltip
+              staffMember={c}
+              assignedGen={assignedGen}
+              x={staffTooltip.x}
+              y={staffTooltip.y}
+            />
           );
         })()}
 
@@ -1576,82 +1018,21 @@ export default function MafiaIdleRedesign() {
 
       {/* Modal Upgrades */}
       {showUpgradesModal && (
-        <Modal
-          title="⚙️ Upgrades disponibles"
-          onClose={() => setShowUpgradesModal(false)}
-        >
-          <div className="grid md:grid-cols-2 gap-3 max-h-[70vh] overflow-y-auto">
-            {Object.values(state.upgrades).map((u) => (
-              <div
-                key={u.id}
-                className="bg-black/50 border border-yellow-600/20 rounded-xl p-4 flex justify-between items-center hover:border-yellow-600 transition"
-              >
-                <div>
-                  <div className="font-bold">{u.label}</div>
-                  <div className="text-sm text-zinc-400">{u.desc}</div>
-                </div>
-                {u.owned ? (
-                  <span className="text-emerald-400 text-sm font-bold">
-                    ✓ Acheté
-                  </span>
-                ) : (
-                  <button
-                    onClick={() => buyUpgrade(u.id)}
-                    disabled={state.cash < u.cost}
-                    className={`px-4 py-2 rounded-lg font-bold transition ${
-                      state.cash >= u.cost
-                        ? "bg-emerald-600 hover:bg-emerald-500"
-                        : "bg-zinc-800 opacity-50 cursor-not-allowed"
-                    }`}
-                  >
-                    $ {formatNumber(u.cost)}
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        </Modal>
+        <UpgradesModal
+          state={state}
+          buyUpgrade={buyUpgrade}
+          setShowUpgradesModal={setShowUpgradesModal}
+        />
       )}
 
       {/* Modal Influence */}
       {showInfluenceModal && (
-        <Modal
-          title="🎩 Influence politique"
-          onClose={() => setShowInfluenceModal(false)}
-        >
-          <div className="space-y-3">
-            <div className="text-sm text-zinc-300 mb-4">
-              Mitigation passive:{" "}
-              <span className="text-yellow-600 font-bold">
-                {(state.heatMitigationPerSec ?? 0).toFixed(2)} /s
-              </span>
-            </div>
-            <button
-              onClick={() => {
-                bribe(500, 50, 5);
-                setShowInfluenceModal(false);
-              }}
-              disabled={state.cash < 500 || state.respect < 50}
-              className="w-full px-4 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition"
-            >
-              Graisser la pâte du juge (−5 chaleur) • $500 + 50 respect
-            </button>
-            <button
-              onClick={() => buyPassiveInfluence(5000, 250, 0.05)}
-              disabled={state.cash < 5000 || state.respect < 250}
-              className="w-full px-4 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition"
-            >
-              Réseau politique (−0.05/s) • $5k + 250 respect
-            </button>
-            <button
-              onClick={() => buyPassiveInfluence(10000, 125, 0.05)}
-              disabled={state.cash < 10000 || state.respect < 125}
-              className="w-full px-4 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition"
-            >
-              Pot de vin au commissaire (−0.05/s) • $10k + 125 respect
-            </button>
-          </div>
-        </Modal>
+        <InfluenceModal
+          state={state}
+          bribe={bribe}
+          buyPassiveInfluence={buyPassiveInfluence}
+          setShowInfluenceModal={setShowInfluenceModal}
+        />
       )}
 
       {/* Modal Investissements Omertà */}
@@ -2158,86 +1539,6 @@ export default function MafiaIdleRedesign() {
 // ----------------------------
 // Random Events System
 // ----------------------------
-// --------- Omertà Investments ---------
-type Investment = {
-  id: string;
-  label: string;
-  desc: string;
-  points: number;
-};
-
-const INVESTMENTS: Investment[] = [
-  {
-    id: "inv_income_1",
-    label: "+5% revenus globaux",
-    desc: "Augmente vos revenus de toutes filières.",
-    points: 1,
-  },
-  {
-    id: "inv_income_2",
-    label: "+10% revenus globaux",
-    desc: "Cumulable avec le précédent.",
-    points: 3,
-  },
-  {
-    id: "inv_heat_1",
-    label: "-0.03 chaleur/s",
-    desc: "Mitigation passive permanente.",
-    points: 1,
-  },
-  {
-    id: "inv_heat_2",
-    label: "-0.05 chaleur/s",
-    desc: "Mitigation additionnelle.",
-    points: 2,
-  },
-  {
-    id: "inv_cost_1",
-    label: "-3% coûts",
-    desc: "Réduction du coût d'achat des générateurs.",
-    points: 1,
-  },
-  {
-    id: "inv_cost_2",
-    label: "-5% coûts",
-    desc: "Réduction additionnelle des coûts.",
-    points: 2,
-  },
-];
-
-function applyInvestment(prev: SaveState, id: string): SaveState {
-  if ((prev.investmentsPurchased || {})[id]) return prev;
-  const inv = INVESTMENTS.find((i) => i.id === id);
-  if (!inv) return prev;
-  if ((prev.prestigePoints || 0) < inv.points) return prev;
-  const next: SaveState = { ...prev };
-  next.prestigePoints = (next.prestigePoints || 0) - inv.points;
-  next.investmentsPurchased = {
-    ...(next.investmentsPurchased || {}),
-    [id]: true,
-  };
-  switch (id) {
-    case "inv_income_1":
-      next.permaGlobalMult = (next.permaGlobalMult || 1) * 1.05;
-      break;
-    case "inv_income_2":
-      next.permaGlobalMult = (next.permaGlobalMult || 1) * 1.1;
-      break;
-    case "inv_heat_1":
-      next.heatMitigationPerSec = (next.heatMitigationPerSec || 0) + 0.03;
-      break;
-    case "inv_heat_2":
-      next.heatMitigationPerSec = (next.heatMitigationPerSec || 0) + 0.05;
-      break;
-    case "inv_cost_1":
-      next.costDiscount = clamp((next.costDiscount || 0) + 0.03, 0, 0.5);
-      break;
-    case "inv_cost_2":
-      next.costDiscount = clamp((next.costDiscount || 0) + 0.05, 0, 0.5);
-      break;
-  }
-  return next;
-}
 
 // Events data moved to domain/events
 
@@ -2326,323 +1627,3 @@ function RandomEvent({
 
 // ----------------------------
 // Families Intel Component
-
-// ----------------------------
-// Case Opening Modal
-// ----------------------------
-function CaseOpeningModal({
-  pool,
-  targetIndex,
-  result,
-  onFinished,
-  onCancel,
-  familyNames,
-  audio,
-  canOpenAnother,
-  onOpenAnother,
-  existingStaffNames,
-}: {
-  pool: Rarity[];
-  targetIndex: number;
-  result: Rarity;
-  onFinished: (member: StaffMember) => void;
-  onCancel: (refund: boolean) => void;
-  familyNames: string[];
-  audio?: ReturnType<typeof useAudioEngine>;
-  canOpenAnother?: boolean;
-  onOpenAnother?: () => void;
-  existingStaffNames: string[];
-}) {
-  const containerWidth = 600; // px
-  const itemWidth = 120; // px
-  const [offset, setOffset] = useState(0);
-  const [started, setStarted] = useState(false);
-  const [done, setDone] = useState(false);
-  const [reward, setReward] = useState<null | StaffMember>(null);
-  const reelRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    // Start animation on mount
-    const start = setTimeout(() => {
-      const center = containerWidth / 2 - itemWidth / 2;
-      const final = -(targetIndex * itemWidth - center);
-      setOffset(final);
-      setStarted(true);
-    }, 50);
-    return () => clearTimeout(start);
-  }, [targetIndex]);
-
-  // Rank mapping and stat model
-  type Rank = "Petite frappe" | "Soldat" | "Associé" | "Capieri";
-  const pickRoleForRarity = React.useCallback((r: Rarity): Rank => {
-    const roll = Math.random() * 100;
-    if (r === "legendary") return roll < 70 ? "Capieri" : "Associé";
-    if (r === "epic")
-      return roll < 30 ? "Capieri" : roll < 80 ? "Associé" : "Soldat";
-    if (r === "rare")
-      return roll < 10
-        ? "Capieri"
-        : roll < 45
-        ? "Associé"
-        : roll < 85
-        ? "Soldat"
-        : "Petite frappe";
-    if (r === "uncommon")
-      return roll < 15 ? "Associé" : roll < 60 ? "Soldat" : "Petite frappe";
-    return roll < 5 ? "Soldat" : "Petite frappe";
-  }, []);
-  const rankBase = React.useMemo<Record<Rank, number>>(
-    () => ({ "Petite frappe": 35, Soldat: 50, Associé: 60, Capieri: 70 }),
-    []
-  );
-  const rarityBonus = React.useMemo<Record<Rarity, number>>(
-    () => ({ common: 0, uncommon: 4, rare: 9, epic: 16, legendary: 25 }),
-    []
-  );
-  const raritySpread = React.useMemo<Record<Rarity, number>>(
-    () => ({ common: 10, uncommon: 12, rare: 15, epic: 20, legendary: 25 }),
-    []
-  );
-
-  // Finalize helper used both for transitionend and "skip"
-  const finalizeDrop = React.useCallback(() => {
-    if (done) return;
-    setDone(true);
-    // Build member based on rarity result and rank
-    const id = generateItemId("staff");
-    const names = new Set(existingStaffNames);
-    const name = generateMafiaFullName(names);
-    const rank = pickRoleForRarity(result);
-    const base = rankBase[rank] + rarityBonus[result];
-    const spread = raritySpread[result];
-    const rnd = () =>
-      Math.max(25, Math.min(100, Math.round(base + Math.random() * spread)));
-    const family =
-      familyNames.length > 0
-        ? familyNames[Math.floor(Math.random() * familyNames.length)]
-        : "Famiglia d'Oro";
-    const member: StaffMember = {
-      id,
-      name,
-      role: rank,
-      family,
-      stats: [rnd(), rnd(), rnd(), rnd()],
-    };
-    setReward(member);
-    try {
-      // stop reel audio and play win tone
-      if (audio) {
-        audio.stopReelSound();
-        audio.playDropWin(result);
-      }
-    } catch (e) {
-      console.warn("audio finalize error", e);
-    }
-    // confetti tuned by rarity
-    try {
-      const colors = ["#ffd700", "#f97316", "#ef4444", "#8b5cf6", "#10b981"];
-      const small = {
-        particleCount: 30,
-        spread: 60,
-        startVelocity: 35,
-        colors,
-      };
-      const big = { particleCount: 120, spread: 90, startVelocity: 45, colors };
-      if (result === "legendary") {
-        confetti(big);
-        setTimeout(() => confetti(small), 180);
-      } else if (result === "epic") {
-        confetti({ particleCount: 80, spread: 80, colors });
-      } else if (result === "rare") {
-        confetti({ particleCount: 50, spread: 70, colors });
-      } else {
-        confetti(small);
-      }
-    } catch (e) {
-      // if confetti lib fails, ignore gracefully
-      console.warn("confetti failed", e);
-    }
-
-    onFinished(member);
-  }, [
-    done,
-    familyNames,
-    onFinished,
-    pickRoleForRarity,
-    rankBase,
-    rarityBonus,
-    raritySpread,
-    result,
-    audio,
-    existingStaffNames,
-  ]);
-
-  useEffect(() => {
-    if (!started) return;
-    const node = reelRef.current;
-    let timer: number | null = null;
-    if (node)
-      node.addEventListener("transitionend", finalizeDrop, { once: true });
-    // Fallback timer (dev/slow devices)
-    timer = window.setTimeout(finalizeDrop, 4600);
-    return () => {
-      if (node) node.removeEventListener("transitionend", finalizeDrop);
-      if (timer) window.clearTimeout(timer);
-    };
-  }, [started, finalizeDrop]);
-
-  // Start/stop reel audio
-  useEffect(() => {
-    if (started) {
-      try {
-        audio?.startReelSound();
-      } catch (e) {
-        console.warn("startReelSound error", e);
-      }
-    }
-    return () => {
-      try {
-        audio?.stopReelSound();
-      } catch (e) {
-        console.warn("stopReelSound error", e);
-      }
-    };
-  }, [started, audio]);
-
-  const colorFor = (r: Rarity) =>
-    r === "legendary"
-      ? "from-yellow-500 to-amber-300"
-      : r === "epic"
-      ? "from-purple-600 to-fuchsia-400"
-      : r === "rare"
-      ? "from-sky-600 to-cyan-400"
-      : r === "uncommon"
-      ? "from-emerald-600 to-emerald-400"
-      : "from-zinc-600 to-zinc-400";
-
-  return (
-    <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/70">
-      <div className="relative w-full max-w-3xl mx-4 p-6 rounded-2xl border-2 border-yellow-600 bg-linear-to-br from-zinc-900 to-zinc-800 shadow-2xl overflow-hidden">
-        {/* Close button (always enabled) */}
-        <button
-          className="absolute top-3 right-3 px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-white text-sm"
-          onClick={() => onCancel(false)}
-        >
-          ✕
-        </button>
-        <div className="text-center text-yellow-500 font-bold mb-3">
-          Ouverture de contrat
-        </div>
-        <div
-          className="relative mx-auto"
-          style={{ width: `${containerWidth}px` }}
-        >
-          {/* Marker */}
-          <div className="absolute left-1/2 top-0 -translate-x-1/2 h-full w-0.5 bg-yellow-500 z-10" />
-          {/* Reel */}
-          <div
-            className="relative whitespace-nowrap will-change-transform"
-            ref={reelRef}
-            style={{
-              transform: `translateX(${offset}px)`,
-              transition: started
-                ? "transform 4.2s cubic-bezier(0.1, 0.9, 0.1, 1)"
-                : undefined,
-            }}
-          >
-            {pool.map((r, i) => (
-              <div
-                key={i}
-                className="inline-block px-2"
-                style={{ width: `${itemWidth}px` }}
-              >
-                <div
-                  className={`h-24 rounded-xl border p-2 text-center text-xs text-white bg-linear-to-br ${colorFor(
-                    r
-                  )} border-white/20 shadow-inner flex items-center justify-center`}
-                >
-                  {r.toUpperCase()}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Visual effects on finish */}
-        {started && (
-          <div className="pointer-events-none absolute inset-0">
-            <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-24 bg-linear-to-b from-transparent via-yellow-500/10 to-transparent" />
-          </div>
-        )}
-
-        {/* Reward card replaces reel once done */}
-        {done && reward && (
-          <div className="mt-6 p-4 rounded-xl border border-yellow-600/40 bg-black/40">
-            <div className="text-yellow-500 font-bold mb-2">Nouveau membre</div>
-            <div className="flex items-center gap-3">
-              <Avatar size={48} name={reward.id} />
-              <div>
-                <div className="font-semibold">{reward.name}</div>
-                <div className="text-xs text-zinc-400">
-                  {reward.role} • {reward.family}
-                </div>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-[11px] mt-3">
-              {[
-                ["🎭 Charisme", 0],
-                ["💪 Force", 1],
-                ["🧠 Esprit", 2],
-                ["🤝 Réseau", 3],
-              ].map(([label, idx]) => (
-                <div key={label as string}>
-                  <div className="flex justify-between">
-                    <span>{label as string}</span>
-                    <span>{reward.stats[idx as number]}</span>
-                  </div>
-                  <div className="h-1 bg-white/10 rounded-full overflow-hidden">
-                    <div
-                      className="h-1 bg-linear-to-r from-yellow-600 to-yellow-300"
-                      style={{ width: `${reward.stats[idx as number]}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div className="mt-4 flex justify-center gap-3">
-          {!done && started && (
-            <button
-              className="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-lg text-black"
-              onClick={() => {
-                // Skip the animation and finalize immediately
-                finalizeDrop();
-              }}
-            >
-              Passer l'animation
-            </button>
-          )}
-          {done && reward && canOpenAnother && (
-            <button
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg"
-              onClick={() => {
-                if (onOpenAnother) onOpenAnother();
-              }}
-            >
-              Ouvrir une autre caisse
-            </button>
-          )}
-          <button
-            className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg"
-            onClick={() => onCancel(false)}
-            disabled={!done}
-          >
-            Fermer
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
