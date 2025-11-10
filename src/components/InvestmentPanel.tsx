@@ -1,9 +1,4 @@
-type Investment = {
-  id: string;
-  label: string;
-  desc: string;
-  points: number;
-};
+import type { Investment } from "../domain/investments";
 
 const INVESTMENTS: Investment[] = [
   {

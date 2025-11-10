@@ -1,59 +1,11 @@
 import React, { useMemo, useState } from "react";
-
-// Types mirrored from MafiaIdleGame (keep in sync lightly)
-type GeneratorKey =
-  | "pickpocket"
-  | "racket"
-  | "club"
-  | "casino"
-  | "olive"
-  | "bar"
-  | "grocery";
-
-type StaffMember = {
-  id: string;
-  name: string;
-  role: string;
-  family: string;
-  stats: [number, number, number, number]; // [Charisme, Force, Esprit, Réseau]
-};
-
-type Rarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
-
-type WeaponItem = {
-  id: string;
-  name: string;
-  rarity: Rarity;
-  bonusPower: number;
-  bonusDesc: string;
-  price: number;
-};
-
-type VehicleItem = {
-  id: string;
-  name: string;
-  rarity: Rarity;
-  speed: number;
-  armor: number;
-  price: number;
-};
-
-type FamilyState = "peace" | "war" | "partnership";
-type Family = {
-  id: string;
-  name: string;
-  state: FamilyState;
-  partnershipSectors: GeneratorKey[];
-  lastWarTs?: number;
-  econ?: {
-    cash: number;
-    respect: number;
-    members: number;
-    weapons: number;
-    vehicles: number;
-    tier?: "normal" | "bankrupt" | "boss";
-  };
-};
+import type {
+  StaffMember,
+  //Rarity,FamilyState,
+  WeaponItem,
+  VehicleItem,
+  Family,
+} from "./domain/types";
 
 type WarAction = "assassination" | "kidnapping" | "intimidation";
 

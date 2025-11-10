@@ -1,5 +1,6 @@
 import type { SaveState } from "./types";
-import { defaultGenerators, defaultUpgrades, defaultStaff } from "./defaults";
+import { defaultGenerators, defaultUpgrades } from "./defaults";
+import { defaultStaff } from "./staff";
 import { defaultFamilies } from "./familyData";
 
 const STORAGE_KEY = "mafia-idle-redesign-v1";

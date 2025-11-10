@@ -1,10 +1,4 @@
-export type StaffMember = {
-  id: string;
-  name: string;
-  role: string;
-  family: string;
-  stats: [number, number, number, number];
-};
+import type { StaffMember } from "./types";
 
 export function defaultStaff(): StaffMember[] {
   return [

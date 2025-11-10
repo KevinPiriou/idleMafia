@@ -63,6 +63,7 @@ export type Family = {
 };
 
 export type Rarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
+
 export type WeaponItem = {
   id: string;
   name: string;

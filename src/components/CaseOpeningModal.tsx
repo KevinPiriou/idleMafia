@@ -3,7 +3,7 @@ import confetti from "canvas-confetti";
 import type { Rarity, StaffMember } from "../domain/types";
 import { useAudioEngine } from "../hooks/useAudioEngine";
 import { generateMafiaFullName } from "../utils/nameGenerator";
-import { generateItemId } from "../domain/utils";
+import { generateItemId } from "../domain/item";
 import { Avatar } from "./ui/Avatar";
 
 export function CaseOpeningModal({

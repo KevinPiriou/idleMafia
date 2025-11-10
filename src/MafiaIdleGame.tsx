@@ -66,7 +66,7 @@ import { applyInvestment } from "./domain/investments";
 // (RandomEventDef imported in domain/events types; not needed here)
 import { useGameStore, createInitialFromSave } from "./store/root";
 import { prestigeGain } from "./domain/prestige";
-import { generateItemId } from "./domain/utils";
+import { generateItemId } from "./domain/item";
 
 // Lightweight type to receive WarModal results without importing internals
 type WarResolve = {
