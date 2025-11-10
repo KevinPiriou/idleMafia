@@ -125,6 +125,10 @@ export type SaveState = {
   costDiscount?: number;
   investmentsPurchased?: Record<string, boolean>;
 
+  // Tutorial
+  tutorialCompleted?: boolean;
+  tutorialStep?: number;
+
   // Meta
   lastSave: number;
   version?: number;

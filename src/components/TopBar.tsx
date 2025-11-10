@@ -8,9 +8,15 @@ type StatBoxProps = {
   tooltip?: React.ReactNode;
 };
 
-function StatBox({ label, value, danger = false, tooltip }: StatBoxProps) {
+function StatBox({
+  label,
+  value,
+  danger = false,
+  tooltip,
+  ...props
+}: StatBoxProps & { "data-stat"?: string }) {
   return (
-    <div className="relative group">
+    <div className="relative group" {...props}>
       <div className="bg-black/60 border border-yellow-600 rounded-xl px-5 py-3 backdrop-blur-sm hover:translate-y-[-3px] hover:shadow-[0_5px_20px_rgba(212,175,55,0.4)] transition min-w-[140px]">
         <div className="text-[11px] uppercase tracking-wider text-yellow-600 mb-1">
           {label}
@@ -90,23 +96,31 @@ export default function TopBar({
             label="💰 Cash"
             value={`$ ${formatNumber(cashSel)}`}
             tooltip={cashTooltipContent}
+            data-stat="cash"
           />
           <StatBox
             label="👑 Respect"
             value={formatNumber(respectSel)}
             tooltip={respectTooltipContent}
+            data-stat="respect"
           />
           <StatBox
             label="🔥 Chaleur"
             value={`${formatNumber(heatSel)} / 100`}
             danger={heatSel >= 80}
             tooltip={heatTooltipContent}
+            data-stat="heat"
           />
           <StatBox
             label="🤝 Omertà"
             value={`x${(state.prestigeMult ?? 1).toFixed(2)}`}
+            data-stat="omerta"
           />
-          <StatBox label="⭐ Niveau" value={`Lv ${state.level}`} />
+          <StatBox
+            label="⭐ Niveau"
+            value={`Lv ${state.level}`}
+            data-stat="level"
+          />
           <button
             onClick={() => setMuted(!muted)}
             className="px-4 py-2 bg-black/60 border border-yellow-700/60 rounded-xl hover:bg-yellow-700/20 transition backdrop-blur-sm"

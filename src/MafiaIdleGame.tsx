@@ -39,6 +39,8 @@ import { StaffTooltip } from "./components/StaffTooltip";
 import { MainMenu } from "./components/MainMenu";
 import { UpgradesModal } from "./components/UpgradesModal";
 import { InfluenceModal } from "./components/InfluenceModal";
+import TutorialOverlay from "./components/TutorialOverlay";
+import { TUTORIAL_STEPS } from "./domain/tutorial";
 import { useAudioEngine } from "./hooks/useAudioEngine";
 import { usePlayerActions } from "./hooks/usePlayerActions";
 
@@ -161,6 +163,8 @@ export default function MafiaIdleRedesign() {
     y: number;
   }>(null);
 
+  const [tutorialActive, setTutorialActive] = useState(false);
+
   const [actionProgress, setActionProgress] = useState<
     Record<GeneratorKey, number>
   >({
@@ -258,6 +262,10 @@ export default function MafiaIdleRedesign() {
 
   // Tick
   useEffect(() => {
+    if (showMenu) {
+      return; // Pause game tick when menu is open
+    }
+
     const lastTickRef = { current: performance.now() };
     const applyDt = (dt: number) => {
       const s = stateRef.current;
@@ -321,7 +329,7 @@ export default function MafiaIdleRedesign() {
     }, 250);
 
     return () => clearInterval(id);
-  }, []);
+  }, [showMenu]);
 
   // Plus de scaling: on s'adapte nativement à la fenêtre
 
@@ -531,6 +539,48 @@ export default function MafiaIdleRedesign() {
   const { buy, buyMax, buyUpgrade, bribe, buyPassiveInfluence, doPrestige } =
     usePlayerActions(stateRef, setState, incTension, isActionLocked);
 
+  // Tutorial Logic
+  useEffect(() => {
+    const s = stateRef.current;
+    if (
+      !(s.tutorialCompleted ?? false) &&
+      (s.tutorialStep ?? 0) < TUTORIAL_STEPS.length
+    ) {
+      setTutorialActive(true);
+    }
+  }, []);
+
+  const advanceTutorial = () => {
+    setState((prev) => {
+      const nextStep = (prev.tutorialStep || 0) + 1;
+      if (nextStep >= TUTORIAL_STEPS.length) {
+        setTutorialActive(false);
+        return { ...prev, tutorialCompleted: true };
+      }
+      return { ...prev, tutorialStep: nextStep };
+    });
+  };
+
+  const skipTutorial = () => {
+    setState((prev) => ({ ...prev, tutorialCompleted: true }));
+    setTutorialActive(false);
+  };
+
+  // Auto-advance tutorial on action validation
+  useEffect(() => {
+    const s = stateRef.current;
+    if (
+      tutorialActive &&
+      !(s.tutorialCompleted ?? false) &&
+      (s.tutorialStep ?? 0) < TUTORIAL_STEPS.length
+    ) {
+      const currentStep = TUTORIAL_STEPS[s.tutorialStep ?? 0];
+      if (currentStep.action && currentStep.action.validation(s)) {
+        advanceTutorial();
+      }
+    }
+  }, [state, tutorialActive]);
+
   // Auto-clear outdated lock flags
   useEffect(() => {
     setState((prev) => {
@@ -705,6 +755,13 @@ export default function MafiaIdleRedesign() {
 
   return (
     <div className="min-h-screen relative text-zinc-100 font-serif">
+      {tutorialActive && !state.tutorialCompleted && !showMenu && (
+        <TutorialOverlay
+          step={TUTORIAL_STEPS[state.tutorialStep || 0]}
+          onNext={advanceTutorial}
+          onSkip={skipTutorial}
+        />
+      )}
       {/* Main Menu Overlay */}
       {showMenu && (
         <MainMenu
@@ -751,7 +808,10 @@ export default function MafiaIdleRedesign() {
         style={{ width: "100%" }}
       >
         {/* Header cinématique */}
-        <div className="relative bg-linear-to-r from-black/90 via-amber-900/30 to-black/90 border-2 border-yellow-600 rounded-2xl p-6 mb-5 shadow-[0_10px_40px_rgba(212,175,55,0.3)] overflow-visible">
+        <div
+          id="game-header"
+          className="relative bg-linear-to-r from-black/90 via-amber-900/30 to-black/90 border-2 border-yellow-600 rounded-2xl p-6 mb-5 shadow-[0_10px_40px_rgba(212,175,55,0.3)] overflow-visible"
+        >
           <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/10 to-transparent animate-[shine_3s_infinite]" />
           <TopBar
             state={state}
@@ -778,6 +838,7 @@ export default function MafiaIdleRedesign() {
             Opérations
           </button>
           <button
+            data-tab="family"
             onClick={() => setActiveTab("family")}
             className={`px-4 py-2 rounded-xl border transition ${
               activeTab === "family"
@@ -793,7 +854,7 @@ export default function MafiaIdleRedesign() {
         <div style={{ display: activeTab === "ops" ? "block" : "none" }}>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 mb-5 items-stretch">
             {/* Personnel - Col gauche */}
-            <div className="lg:col-span-3">
+            <div data-section="staff" className="lg:col-span-3">
               <Card
                 title="👥 Personnel"
                 subtitle={`${mockCharacters.length}/200 membres`}
@@ -856,7 +917,7 @@ export default function MafiaIdleRedesign() {
             </div>
 
             {/* Bureau - Col droite */}
-            <div className="lg:col-span-3">
+            <div data-section="staff" className="lg:col-span-3">
               <Card title="🏢 Le Bureau" subtitle="Gestion">
                 <div className="space-y-3">
                   <ActionCard
@@ -875,6 +936,7 @@ export default function MafiaIdleRedesign() {
                     desc="4 améliorations disponibles"
                     buttonText="Voir upgrades"
                     onClick={() => setShowUpgradesModal(true)}
+                    data-action="upgrades"
                   />
 
                   <ActionCard
@@ -951,6 +1013,7 @@ export default function MafiaIdleRedesign() {
                   desc="Armes, véhicules et contrats clandestins"
                   buttonText="Ouvrir le marché"
                   onClick={() => setShowMarket(true)}
+                  data-action="black-market"
                 />
                 <ActionCard
                   icon="⚔️"
@@ -958,6 +1021,7 @@ export default function MafiaIdleRedesign() {
                   desc="Gérer alliances, guerres et partenariats"
                   buttonText="Gérer relations"
                   onClick={() => setRelationsModal(true)}
+                  data-action="family-relations"
                 />
                 <ActionCard
                   icon="🏠"
