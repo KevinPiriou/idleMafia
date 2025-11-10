@@ -1,43 +1,5 @@
-import type { Investment } from "../domain/investments";
-
-const INVESTMENTS: Investment[] = [
-  {
-    id: "inv_income_1",
-    label: "+5% revenus globaux",
-    desc: "Augmente vos revenus de toutes filières.",
-    points: 1,
-  },
-  {
-    id: "inv_income_2",
-    label: "+10% revenus globaux",
-    desc: "Cumulable avec le précédent.",
-    points: 3,
-  },
-  {
-    id: "inv_heat_1",
-    label: "-0.03 chaleur/s",
-    desc: "Mitigation passive permanente.",
-    points: 1,
-  },
-  {
-    id: "inv_heat_2",
-    label: "-0.05 chaleur/s",
-    desc: "Mitigation additionnelle.",
-    points: 2,
-  },
-  {
-    id: "inv_cost_1",
-    label: "-3% coûts",
-    desc: "Réduction du coût d'achat des générateurs.",
-    points: 1,
-  },
-  {
-    id: "inv_cost_2",
-    label: "-5% coûts",
-    desc: "Réduction additionnelle des coûts.",
-    points: 2,
-  },
-];
+//import type { Investment } from "../domain/investments";
+import { INVESTMENTS } from "../domain/investments";
 
 interface InvestmentsPanelProps {
   points: number;

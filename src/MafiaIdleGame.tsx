@@ -11,11 +11,12 @@ import type {
 } from "./domain/types";
 import {
   computeWarPower,
-  simulateFamiliesEconomy,
+  //simulateFamiliesEconomy,
   //computeFamilyScore,
   //computeCompositePower,
 } from "./domain/family";
-import { loadSave, saveGame } from "./domain/save";
+
+import { loadSave } from "./domain/save";
 
 import WarModal from "./WarModal";
 import TopBar from "./components/TopBar";
@@ -42,6 +43,7 @@ import { InfluenceModal } from "./components/InfluenceModal";
 import TutorialOverlay from "./components/TutorialOverlay";
 import { TUTORIAL_STEPS } from "./domain/tutorial";
 import { useAudioEngine } from "./hooks/useAudioEngine";
+import { useGameLoop } from "./hooks/useGameLoop";
 import { usePlayerActions } from "./hooks/usePlayerActions";
 
 import {
@@ -50,15 +52,17 @@ import {
   TIME_XP_RATE,
   XP_PER_CASH_PER_SEC,
 } from "./domain/balance";
+
 import {
   discountedGenCost,
   staffMultiplierForGenerator,
   prodPerUnit,
   computeProduction,
-  computeTick,
   revenuePerSecForKey,
   xpForLevel,
 } from "./domain/economy";
+import { applyTick } from "./domain/sim/tick";
+
 //import { computeXpDelta, applyLevelUps } from "./domain/progression";
 import { pickRarity } from "./domain/events";
 import { applyInvestment } from "./domain/investments";
@@ -260,102 +264,35 @@ export default function MafiaIdleRedesign() {
     audio.setVolume(volume / 100);
   }, [audio, volume]);
 
-  // Tick
-  useEffect(() => {
-    if (showMenu) {
-      return; // Pause game tick when menu is open
-    }
+  // Boucle de jeu extraite : on applique un tick pur puis on met à jour l'UI
+  useGameLoop((dt) => {
+    const clampedDt = Math.min(Math.max(dt, 0), 60);
 
-    const lastTickRef = { current: performance.now() };
-    const applyDt = (dt: number) => {
-      const s = stateRef.current;
-      const clampedDt = Math.min(Math.max(dt, 0), 60);
-      const { cashDelta, respectDelta, heatDelta } = computeTick(s, clampedDt);
-      const next: SaveState = {
-        ...s,
-        cash: s.cash + cashDelta,
-        respect: s.respect + respectDelta,
-        heat: clamp(s.heat + heatDelta, 0, 100),
-      };
+    // 1) Mise à jour du state métier via la fonction pure
+    setState((prev) => applyTick(prev, clampedDt));
 
-      const xpFromTime = TIME_XP_RATE * clampedDt;
-      const cashPerSec = computeProduction(s).cashPerSec;
-      const xpFromRevenue = cashPerSec * XP_PER_CASH_PER_SEC * clampedDt;
-      next.xp = (s.xp ?? 0) + xpFromTime + xpFromRevenue;
-      next.level = s.level ?? 1;
+    // 2) Mise à jour de l'animation "top fill" (UI, non persisté)
+    setActionProgress((prev: Record<GeneratorKey, number>) => {
+      const updated: Record<GeneratorKey, number> = { ...prev };
 
-      while (next.xp >= xpForLevel(next.level)) {
-        next.xp -= xpForLevel(next.level);
-        next.level += 1;
-      }
-      // If heat-lock is satisfied, clear it immediately
-      if (
-        next.actionLockedUntilHeat != null &&
-        next.heat <= next.actionLockedUntilHeat
-      ) {
-        next.actionLockedUntilHeat = undefined;
-      }
-      // Update other families economy to keep pacing
-      next.families = simulateFamiliesEconomy(next, clampedDt, cashPerSec);
-      setState(next);
+      const gens = Object.keys(stateRef.current.gens) as GeneratorKey[];
+      // max des revenus pour normaliser la vitesse de progression du fill
+      const maxRev = Math.max(
+        ...gens.map((key) => revenuePerSecForKey(stateRef.current, key) || 0),
+        1
+      );
 
-      let maxRev = 0;
-      (Object.keys(next.gens) as GeneratorKey[]).forEach((k) => {
-        const r = revenuePerSecForKey(next, k);
-        if (r > maxRev) maxRev = r;
+      gens.forEach((key) => {
+        const rev = revenuePerSecForKey(stateRef.current, key);
+        const speed = (rev / maxRev) * (clampedDt / TOP_FILL_TIME);
+        let val = (prev[key] ?? 0) + speed;
+        val = val - Math.floor(val);
+        updated[key] = clamp(val, 0, 0.999999);
       });
-      setActionProgress((prev) => {
-        const updated: Record<GeneratorKey, number> = { ...prev };
-        (Object.keys(next.gens) as GeneratorKey[]).forEach((key) => {
-          const rev = revenuePerSecForKey(next, key);
-          if (maxRev <= 0 || rev <= 0) {
-            updated[key] = 0;
-            return;
-          }
-          const speed = (rev / maxRev) * (clampedDt / TOP_FILL_TIME);
-          let val = (prev[key] ?? 0) + speed;
-          val = val - Math.floor(val);
-          updated[key] = clamp(val, 0, 0.999999);
-        });
-        return updated;
-      });
-    };
 
-    const id = window.setInterval(() => {
-      const now = performance.now();
-      const dt = (now - lastTickRef.current) / 1000;
-      lastTickRef.current = now;
-      applyDt(dt);
-    }, 250);
-
-    return () => clearInterval(id);
-  }, [showMenu]);
-
-  // Plus de scaling: on s'adapte nativement à la fenêtre
-
-  // Autosave frequently and on page/tab lifecycle changes
-  useEffect(() => {
-    const id = window.setInterval(() => saveGame(stateRef.current), 1000);
-    const handleImmediateSave = () => {
-      try {
-        saveGame(stateRef.current);
-      } catch (e) {
-        console.warn("Save on lifecycle failed:", e);
-      }
-    };
-    const onVisibility = () => {
-      if (document.hidden) handleImmediateSave();
-    };
-    window.addEventListener("pagehide", handleImmediateSave);
-    window.addEventListener("beforeunload", handleImmediateSave);
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      clearInterval(id);
-      window.removeEventListener("pagehide", handleImmediateSave);
-      window.removeEventListener("beforeunload", handleImmediateSave);
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, []);
+      return updated;
+    });
+  }, 250);
 
   // Random events scheduler
   useEffect(() => {
