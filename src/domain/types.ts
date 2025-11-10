@@ -86,7 +86,8 @@ export type SaveState = {
   heat: number;
   level: number;
   xp: number;
-
+  eventLog?: EventLogEntry[];
+  lastJournalSeenTs?: number; // timestamp du dernier "vu"
   // Generators et upgrades
   gens: Record<GeneratorKey, Generator>;
   upgrades: Record<string, Upgrade>;
@@ -131,4 +132,14 @@ export type SaveState = {
   // Meta
   lastSave: number;
   version?: number;
+};
+export type EventLogEntry = {
+  id: string;
+  ts: number; // timestamp ms
+  kind: "event" | "war" | "system" | "economy" | "upgrade" | "prestige";
+  title: string;
+  summary: string;
+  details?: string[]; // paragraphes optionnels
+  deltas?: { cash?: number; respect?: number; heat?: number; tension?: number };
+  tags?: string[]; // ex: ["random","success"]
 };

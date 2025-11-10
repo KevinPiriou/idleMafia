@@ -5,6 +5,7 @@ import type { SaveState } from "../domain/types";
 export default function EventModal({
   onClose,
   onApply,
+  onLog,
 }: {
   onClose: () => void;
   onApply: (apply: (s: SaveState) => SaveState) => {
@@ -12,6 +13,12 @@ export default function EventModal({
     respect: number;
     heat: number;
   };
+  onLog?: (e: {
+    title: string;
+    choice: string;
+    desc: string;
+    deltas: { cash?: number; respect?: number; heat?: number };
+  }) => void;
 }) {
   const ev = useMemo(
     () => EVENTS[Math.floor(Math.random() * EVENTS.length)],
@@ -24,14 +31,6 @@ export default function EventModal({
     heat: number;
   }>(null);
 
-  const pick = (apply: (s: SaveState) => SaveState) => {
-    const d = onApply(apply);
-    setDelta(d);
-    const good = (d.cash ?? 0) + (d.respect ?? 0) - Math.abs(d.heat ?? 0) > 0;
-    setFlash(good ? "success" : "fail");
-    setTimeout(() => onClose(), 1200);
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
       <div className="relative w-full max-w-lg mx-4 bg-linear-to-br from-violet-800/90 to-purple-900/90 border-2 border-violet-400 rounded-2xl p-6 shadow-2xl">
@@ -41,7 +40,21 @@ export default function EventModal({
           {ev.choices.map((c, i) => (
             <div key={i} className="flex flex-col gap-1">
               <button
-                onClick={() => pick(c.apply)}
+                onClick={() => {
+                  const d = onApply(c.apply);
+                  onLog?.({
+                    title: ev.title,
+                    desc: ev.desc,
+                    choice: c.label,
+                    deltas: d,
+                  });
+                  setDelta(d);
+                  const good =
+                    (d.cash ?? 0) + (d.respect ?? 0) - Math.abs(d.heat ?? 0) >
+                    0;
+                  setFlash(good ? "success" : "fail");
+                  setTimeout(() => onClose(), 1200);
+                }}
                 className="px-4 py-3 rounded-lg bg-white/10 border border-white/30 hover:bg-white/20 transition text-sm text-left text-white"
               >
                 {c.label}

@@ -55,6 +55,8 @@ import { TUTORIAL_STEPS } from "./domain/tutorial";
 import { useAudioEngine } from "./hooks/useAudioEngine";
 import { useGameLoop } from "./hooks/useGameLoop";
 import { usePlayerActions } from "./hooks/usePlayerActions";
+import { EventJournal } from "./components/EventJournal";
+import { appendEvent, clearEventLog } from "./domain/journal";
 import {
   clamp,
   TOP_FILL_TIME,
@@ -131,6 +133,7 @@ export default function MafiaIdleRedesign() {
   const [tensionModal, setTensionModal] = useState<null | { cost: number }>(
     null
   );
+  const [showJournal, setShowJournal] = useState(false);
   const [showMarket, setShowMarket] = useState(false);
   const [showWarehouse, setShowWarehouse] = useState(false);
   const [showIntel, setShowIntel] = useState(false);
@@ -367,7 +370,17 @@ export default function MafiaIdleRedesign() {
     }
     return map;
   }, [state.gens, state.staff, state.assignments]);
-
+  const unreadJournal = useMemo(() => {
+    const last = state.lastJournalSeenTs ?? 0;
+    const log = state.eventLog ?? [];
+    let n = 0;
+    for (const e of log) if ((e?.ts ?? 0) > last) n++;
+    return n;
+  }, [state.eventLog, state.lastJournalSeenTs]);
+  const openJournal = () => {
+    setShowJournal(true);
+    setState((prev) => ({ ...prev, lastJournalSeenTs: Date.now() }));
+  };
   // Tooltips breakdowns
   const cashTooltipContent = useMemo(() => {
     const items = genSorted.entries.filter((e) => e.revenue > 0).slice(0, 8);
@@ -518,7 +531,9 @@ export default function MafiaIdleRedesign() {
     if (Date.now() < until) return true;
     return false;
   }, []);
-
+  const clearJournal = () => {
+    setState((prev) => clearEventLog(prev));
+  };
   const { buy, buyMax, buyUpgrade, bribe, buyPassiveInfluence, doPrestige } =
     usePlayerActions(stateRef, setState, incTension, isActionLocked);
 
@@ -596,28 +611,53 @@ export default function MafiaIdleRedesign() {
       const nfams = prev.families.map((f) =>
         f.id === fid ? { ...f, state: "war" as FamilyState, lastWarTs: now } : f
       );
-      incTension(30);
-      // Open the war operations modal right away
+      const after = { ...prev, families: nfams };
+      // Ouvre le modal de planification
       setWarFor({ id: fid });
-      return { ...prev, families: nfams };
+      const logged = appendEvent(after, {
+        kind: "war",
+        title: `Guerre déclarée contre ${fam.name}`,
+        summary: `Vous avez officiellement lancé les hostilités.`,
+        tags: ["diplomacy", "war-declare"],
+      });
+      return logged;
     });
+    incTension(30);
   };
   const setPeace = (fid: string) => {
-    setState((prev) => ({
-      ...prev,
-      families: prev.families.map((f) =>
-        f.id === fid ? { ...f, state: "peace" } : f
-      ),
-    }));
+    setState((prev) => {
+      const fam = prev.families.find((f) => f.id === fid);
+      const next = {
+        ...prev,
+        families: prev.families.map((f) =>
+          f.id === fid ? { ...f, state: "peace" as FamilyState } : f
+        ),
+      };
+      return appendEvent(next, {
+        kind: "system",
+        title: `Paix avec ${fam?.name ?? "une famille"}`,
+        summary: `Les hostilités sont suspendues.`,
+        tags: ["diplomacy", "peace"],
+      });
+    });
   };
   const setPartnership = (fid: string) => {
     if (isActionLocked()) return;
-    setState((prev) => ({
-      ...prev,
-      families: prev.families.map((f) =>
-        f.id === fid ? { ...f, state: "partnership" } : f
-      ),
-    }));
+    setState((prev) => {
+      const fam = prev.families.find((f) => f.id === fid);
+      const next = {
+        ...prev,
+        families: prev.families.map((f) =>
+          f.id === fid ? { ...f, state: "partnership" as FamilyState } : f
+        ),
+      };
+      return appendEvent(next, {
+        kind: "system",
+        title: `Partenariat avec ${fam?.name ?? "une famille"}`,
+        summary: `Un accord de collaboration a été conclu.`,
+        tags: ["diplomacy", "partnership"],
+      });
+    });
   };
   const togglePartnershipSector = (fid: string, key: GeneratorKey) => {
     setState((prev) => ({
@@ -648,7 +688,7 @@ export default function MafiaIdleRedesign() {
       const win = Math.random() < chance;
       const next = { ...prev } as SaveState;
       next.families = prev.families.map((f) =>
-        f.id === fid ? { ...f, state: "peace" } : f
+        f.id === fid ? { ...f, state: "peace" as FamilyState } : f
       );
       if (win) {
         next.tempGlobalBuffUntil = Date.now() + 6 * 60 * 60 * 1000; // 6h buff
@@ -782,18 +822,35 @@ export default function MafiaIdleRedesign() {
       {showEvent && (
         <EventModal
           onClose={() => setShowEvent(false)}
-          onApply={(fn) => {
+          onApply={(apply) => {
             let deltas = { cash: 0, respect: 0, heat: 0 };
             setState((prev) => {
-              const next = fn(prev);
+              const after = apply(prev);
               deltas = {
-                cash: Math.round(next.cash - prev.cash),
-                respect: Math.round(next.respect - prev.respect),
-                heat: Number((next.heat - prev.heat).toFixed(2)),
+                cash: Math.round(after.cash - prev.cash),
+                respect: Math.round(after.respect - prev.respect),
+                heat: Number((after.heat - prev.heat).toFixed(2)),
               };
-              return next;
+              return after; // ⬅️ plus d'appendEvent ici
             });
             return deltas;
+          }}
+          onLog={({ title, desc, choice, deltas }) => {
+            setState((prev) => {
+              const good =
+                (deltas.cash ?? 0) +
+                  (deltas.respect ?? 0) -
+                  Math.abs(deltas.heat ?? 0) >
+                0;
+              return appendEvent(prev, {
+                kind: "event",
+                title,
+                summary: desc, // texte de l'événement
+                details: [`Choix : ${choice}`], // on garde le choix en détail
+                deltas,
+                tags: ["random", good ? "success" : "fail"],
+              });
+            });
           }}
         />
       )}
@@ -818,6 +875,8 @@ export default function MafiaIdleRedesign() {
             cashTooltipContent={cashTooltipContent}
             respectTooltipContent={respectTooltipContent}
             heatTooltipContent={heatTooltipContent}
+            unreadJournal={unreadJournal}
+            onShowJournal={openJournal}
             saveVersion={state.version ?? SAVE_VERSION}
             migratedFrom={migratedFrom}
           />
@@ -949,6 +1008,13 @@ export default function MafiaIdleRedesign() {
                     desc="Dépensez des points pour des bonus permanents"
                     buttonText={`Investir (Pts: ${state.prestigePoints})`}
                     onClick={() => setShowInvestments(true)}
+                  />
+                  <ActionCard
+                    icon="🗞️"
+                    title="Journal des événements"
+                    desc="Historique de vos actions et incidents"
+                    buttonText="Ouvrir le journal"
+                    onClick={() => setShowJournal(true)}
                   />
                 </div>
               </Card>
@@ -1582,6 +1648,13 @@ export default function MafiaIdleRedesign() {
             });
             setTensionModal(null);
           }}
+        />
+      )}
+      {showJournal && (
+        <EventJournal
+          entries={state.eventLog ?? []}
+          onClose={() => setShowJournal(false)}
+          onClear={clearJournal}
         />
       )}
     </div>

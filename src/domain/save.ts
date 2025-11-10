@@ -46,6 +46,8 @@ export function createDefaultSave(): SaveState {
     assignments: {},
     inventory: { weapons: [], vehicles: [], contracts: 0 },
     equipped: {},
+    eventLog: [],
+    lastJournalSeenTs: Date.now(),
     families: typeof defaultFamilies === "function" ? defaultFamilies() : [],
     lastSave: Date.now(),
     tempGlobalBuffUntil: undefined,
@@ -88,6 +90,8 @@ function withDefaults(raw: Partial<SaveState> | undefined): SaveState {
     families: from.families ?? base.families,
     lastSave: from.lastSave ?? base.lastSave,
     tempGlobalBuffUntil: from.tempGlobalBuffUntil ?? base.tempGlobalBuffUntil,
+    eventLog: from.eventLog ?? base.eventLog,
+    lastJournalSeenTs: from.lastJournalSeenTs ?? base.lastJournalSeenTs,
   };
 }
 
@@ -109,6 +113,11 @@ function migrateSaveState(input: Partial<SaveState> | undefined): SaveState {
     if (!s.inventory) s.inventory = { weapons: [], vehicles: [], contracts: 0 };
     if (!s.equipped) s.equipped = {};
     if (!s.assignments) s.assignments = {};
+    if (!s.eventLog) s.eventLog = [];
+    if (typeof s.lastJournalSeenTs !== "number") {
+      // on initialise à lastSave si dispo pour éviter de marquer tout l'historique en "non-lu"
+      s.lastJournalSeenTs = (s.lastSave as number) ?? Date.now();
+    }
     // clamp chaleur
     if (typeof s.heat === "number") {
       s.heat = Math.min(100, Math.max(0, s.heat));

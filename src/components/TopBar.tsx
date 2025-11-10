@@ -50,6 +50,8 @@ export type TopBarProps = {
   cashTooltipContent?: React.ReactNode;
   respectTooltipContent?: React.ReactNode;
   heatTooltipContent?: React.ReactNode;
+  unreadJournal?: number;
+  onShowJournal?: () => void;
   saveVersion?: number;
   migratedFrom?: number | null;
 };
@@ -63,6 +65,8 @@ export default function TopBar({
   cashTooltipContent,
   respectTooltipContent,
   heatTooltipContent,
+  unreadJournal,
+  onShowJournal,
   saveVersion = 0,
   migratedFrom = null,
 }: TopBarProps) {
@@ -119,6 +123,18 @@ export default function TopBar({
             value={`Lv ${state.level}`}
             data-stat="level"
           />
+          <button
+            onClick={onShowJournal}
+            className="relative px-3 py-1.5 rounded-md border border-yellow-600/40 bg-black/40 text-yellow-200 hover:bg-yellow-600/10 transition"
+            title="Ouvrir le journal des événements"
+          >
+            📰 Journal
+            {typeof unreadJournal === "number" && unreadJournal > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full text-[11px] flex items-center justify-center bg-red-600 text-white border border-red-300 shadow">
+                {unreadJournal > 99 ? "99+" : unreadJournal}
+              </span>
+            )}
+          </button>
           <button
             onClick={() => setMuted(!muted)}
             className="px-4 py-2 bg-black/60 border border-yellow-700/60 rounded-xl hover:bg-yellow-700/20 transition backdrop-blur-sm"
