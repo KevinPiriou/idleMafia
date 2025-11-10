@@ -58,10 +58,11 @@ import {
   staffMultiplierForGenerator,
   prodPerUnit,
   computeProduction,
-  revenuePerSecForKey,
+  //revenuePerSecForKey,
   xpForLevel,
 } from "./domain/economy";
 import { applyTick } from "./domain/sim/tick";
+import { selectProduction, selectRevenuePerSecForKey } from "./store/selectors";
 
 //import { computeXpDelta, applyLevelUps } from "./domain/progression";
 import { pickRarity } from "./domain/events";
@@ -264,14 +265,38 @@ export default function MafiaIdleRedesign() {
   useEffect(() => {
     audio.setVolume(volume / 100);
   }, [audio, volume]);
+  // Sauvegarde sur fermeture / tab caché (exactement comme l’ancien comportement)
+  useEffect(() => {
+    const handleImmediateSave = () => {
+      try {
+        saveGame(stateRef.current);
+      } catch (e) {
+        console.warn("Save on lifecycle failed:", e);
+      }
+    };
 
+    const onVisibility = () => {
+      if (document.hidden) handleImmediateSave();
+    };
+
+    window.addEventListener("pagehide", handleImmediateSave);
+    window.addEventListener("beforeunload", handleImmediateSave);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      window.removeEventListener("pagehide", handleImmediateSave);
+      window.removeEventListener("beforeunload", handleImmediateSave);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
   // Boucle de jeu extraite : on applique un tick pur puis on met à jour l'UI
   useGameLoop((dt) => {
     const clampedDt = Math.min(Math.max(dt, 0), 60);
 
     // 1) Économie joueur (+ familles) — calculé hors du setState
     const prev = stateRef.current;
-    const s1 = applyTick(prev, clampedDt);
+    const step = clampedDt > 0.5 ? 0.25 : clampedDt; // évite les gros pas > 0.5s
+    const s1 = applyTick(prev, step);
     const playerCashPerSec = computeProduction(s1).cashPerSec;
     const familiesNext = simulateFamiliesEconomy(
       s1,
@@ -289,12 +314,12 @@ export default function MafiaIdleRedesign() {
 
       const gens = Object.keys(next.gens) as GeneratorKey[];
       const maxRev = Math.max(
-        ...gens.map((key) => revenuePerSecForKey(next, key) || 0),
-        1
+        ...gens.map((key) => selectRevenuePerSecForKey(next, key) || 0),
+        0.0001
       );
 
       gens.forEach((key) => {
-        const rev = revenuePerSecForKey(next, key);
+        const rev = selectRevenuePerSecForKey(next, key);
         const speed = (rev / maxRev) * (clampedDt / TOP_FILL_TIME);
         let val = (prevProg[key] ?? 0) + speed;
         val = val - Math.floor(val);
@@ -332,12 +357,13 @@ export default function MafiaIdleRedesign() {
     };
   }, []);
 
-  const prodSummary = useMemo(() => computeProduction(state), [state]);
+  const prodSummary = useMemo(() => selectProduction(state), [state]);
+
   const genSorted = useMemo(() => {
     const entries = (Object.keys(state.gens) as GeneratorKey[]).map((key) => {
       const g = state.gens[key];
       const unit = prodPerUnit(state, key);
-      const revenue = unit * g.owned;
+      const revenue = selectRevenuePerSecForKey(state, key);
       return { key, g, unit, revenue };
     });
     entries.sort((a, b) => b.revenue - a.revenue);

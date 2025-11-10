@@ -1,108 +1,162 @@
-import type { SaveState } from "./types";
+import type { SaveState, GeneratorKey, Generator } from "./types";
 import { defaultGenerators, defaultUpgrades } from "./defaults";
 import { defaultStaff } from "./staff";
+// Si tu as déjà un seed des familles, garde cet import (sinon commente la ligne suivante)
 import { defaultFamilies } from "./familyData";
 
-const STORAGE_KEY = "mafia-idle-redesign-v1";
+export const SAVE_KEY = "mafia-idle-redesign-v1";
+export const SAVE_VERSION = 2;
 
-export const blankSave = (): SaveState => ({
-  cash: 10,
-  respect: 0,
-  heat: 0,
-  gens: defaultGenerators(),
-  upgrades: defaultUpgrades(),
-  prestigeMult: 1,
-  prestigePoints: 0,
-  heatMitigationPerSec: 0,
-  lastSave: Date.now(),
-  version: 2,
-  level: 1,
-  xp: 0,
-  staff: defaultStaff(),
-  assignments: {},
-  families: defaultFamilies(),
-  tempGlobalBuffUntil: undefined,
-  tension: 0,
-  disabledUntil: undefined,
-  actionLockedUntilHeat: undefined,
-  inventory: { weapons: [], vehicles: [], contracts: 0 },
-  equipped: {},
-  permaGlobalMult: 1,
-  costDiscount: 0,
-  investmentsPurchased: {},
-  tutorialCompleted: false,
-  tutorialStep: 0,
-});
+/** Construit un SaveState par défaut, cohérent avec le contenu actuel */
+export function createDefaultSave(): SaveState {
+  // defaultGenerators peut renvoyer un array ou un record selon tes versions — on gère les deux
+  const gensRaw = defaultGenerators() as
+    | Record<GeneratorKey, Generator>
+    | Generator[];
+  const gens: Record<GeneratorKey, Generator> = Array.isArray(gensRaw)
+    ? (gensRaw as Generator[]).reduce<Record<GeneratorKey, Generator>>(
+        (acc, g) => {
+          acc[g.key as GeneratorKey] = g as Generator;
+          return acc;
+        },
+        {} as Record<GeneratorKey, Generator>
+      )
+    : (gensRaw as Record<GeneratorKey, Generator>);
 
-export const loadSave = (): SaveState => {
+  return {
+    version: SAVE_VERSION,
+    cash: 0,
+    respect: 0,
+    heat: 0,
+    level: 1,
+    xp: 0,
+    tension: 0,
+    heatMitigationPerSec: 0,
+    prestigePoints: 0,
+    prestigeMult: 1,
+    gens,
+    upgrades: defaultUpgrades(),
+    staff: defaultStaff(),
+    assignments: {},
+    inventory: { weapons: [], vehicles: [], contracts: 0 },
+    equipped: {},
+    families: typeof defaultFamilies === "function" ? defaultFamilies() : [],
+    lastSave: Date.now(),
+    tempGlobalBuffUntil: undefined,
+    // ajoute ici d'éventuels nouveaux champs avec leurs défauts
+  };
+}
+
+/** Applique des defaults aux champs manquants (non destructive) */
+function withDefaults(raw: Partial<SaveState> | undefined): SaveState {
+  const base = createDefaultSave();
+
+  const from = raw ?? {};
+
+  // gens
+  let gens = base.gens;
+  if (from.gens && Object.keys(from.gens).length > 0) {
+    gens = { ...base.gens, ...from.gens };
+  }
+
+  return {
+    ...base,
+    ...from,
+    version: from.version ?? base.version,
+    cash: from.cash ?? base.cash,
+    respect: from.respect ?? base.respect,
+    heat: Math.min(100, Math.max(0, from.heat ?? base.heat)),
+    level: from.level ?? base.level,
+    xp: from.xp ?? base.xp,
+    tension: Math.min(100, Math.max(0, from.tension ?? base.tension)),
+    heatMitigationPerSec:
+      from.heatMitigationPerSec ?? base.heatMitigationPerSec,
+    prestigePoints: from.prestigePoints ?? base.prestigePoints,
+    prestigeMult: from.prestigeMult ?? base.prestigeMult,
+    gens,
+    upgrades: from.upgrades ?? base.upgrades,
+    staff: from.staff ?? base.staff,
+    assignments: from.assignments ?? base.assignments,
+    inventory: from.inventory ?? base.inventory,
+    equipped: from.equipped ?? base.equipped,
+    families: from.families ?? base.families,
+    lastSave: from.lastSave ?? base.lastSave,
+    tempGlobalBuffUntil: from.tempGlobalBuffUntil ?? base.tempGlobalBuffUntil,
+  };
+}
+
+/** Migration incrémentale selon la version source */
+function migrateSaveState(input: Partial<SaveState> | undefined): SaveState {
+  if (!input) return createDefaultSave();
+
+  const fromVersion = Number(input.version ?? 1);
+
+  // clone superficiel pour mutations contrôlées
+  const s: Partial<SaveState> = { ...(input ?? {}) };
+
+  // ===== v1 -> v2 =====
+  if (fromVersion < 2) {
+    // Exemple : s.xp/s.level pouvaient être undefined
+    if (typeof s.level !== "number") s.level = 1;
+    if (typeof s.xp !== "number") s.xp = 0;
+    if (typeof s.tension !== "number") s.tension = 0;
+    if (!s.inventory) s.inventory = { weapons: [], vehicles: [], contracts: 0 };
+    if (!s.equipped) s.equipped = {};
+    if (!s.assignments) s.assignments = {};
+    // clamp chaleur
+    if (typeof s.heat === "number") {
+      s.heat = Math.min(100, Math.max(0, s.heat));
+    } else {
+      s.heat = 0;
+    }
+  }
+
+  // future migrations ici (v2 -> v3, etc.)
+
+  const merged = withDefaults(s);
+  merged.version = SAVE_VERSION;
+  return merged;
+}
+
+/** Lecture depuis localStorage + migration + normalisation */
+export function loadSave(): SaveState {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return blankSave();
-    const parsed = JSON.parse(raw) as SaveState;
-    const gens = defaultGenerators();
-    const upgs = defaultUpgrades();
-    Object.values(parsed.gens || {}).forEach((g) => {
-      if (gens[g.key]) gens[g.key] = { ...gens[g.key], ...g };
-    });
-    Object.values(parsed.upgrades || {}).forEach((u) => {
-      if (upgs[u.id]) upgs[u.id] = { ...upgs[u.id], ...u };
-    });
-    // Migrate new fields safely
-    const base = blankSave();
-    return {
-      ...base,
-      ...parsed,
-      gens,
-      upgrades: upgs,
-      // Ensure numeric fields are sane after migration
-      prestigeMult:
-        typeof (parsed as SaveState).prestigeMult === "number"
-          ? (parsed as SaveState).prestigeMult
-          : base.prestigeMult,
-      heatMitigationPerSec:
-        typeof (parsed as SaveState).heatMitigationPerSec === "number"
-          ? (parsed as SaveState).heatMitigationPerSec
-          : base.heatMitigationPerSec,
-      staff: parsed.staff && parsed.staff.length ? parsed.staff : base.staff,
-      assignments: parsed.assignments || base.assignments,
-      families:
-        parsed.families && parsed.families.length
-          ? parsed.families
-          : base.families,
-      tempGlobalBuffUntil: parsed.tempGlobalBuffUntil,
-      tension:
-        typeof parsed.tension === "number" ? parsed.tension : base.tension,
-      disabledUntil: parsed.disabledUntil,
-      actionLockedUntilHeat: parsed.actionLockedUntilHeat,
-      inventory: parsed.inventory || base.inventory,
-      equipped: parsed.equipped || base.equipped,
-      permaGlobalMult:
-        typeof (parsed as SaveState).permaGlobalMult === "number"
-          ? (parsed as SaveState).permaGlobalMult
-          : base.permaGlobalMult,
-      costDiscount:
-        typeof (parsed as SaveState).costDiscount === "number"
-          ? (parsed as SaveState).costDiscount
-          : base.costDiscount,
-      investmentsPurchased:
-        (parsed as SaveState).investmentsPurchased || base.investmentsPurchased,
-      tutorialCompleted:
-        (parsed as SaveState).tutorialCompleted || base.tutorialCompleted,
-      tutorialStep: (parsed as SaveState).tutorialStep || base.tutorialStep,
+    const rawStr = localStorage.getItem(SAVE_KEY);
+    if (!rawStr) {
+      const fresh = createDefaultSave();
+      localStorage.setItem(SAVE_KEY, JSON.stringify(fresh));
+      return fresh;
+    }
+    const parsed = JSON.parse(rawStr) as Partial<SaveState>;
+    const migrated = migrateSaveState(parsed);
+    // Write-back si la version a changé
+    if (parsed.version !== SAVE_VERSION) {
+      localStorage.setItem(SAVE_KEY, JSON.stringify(migrated));
+    }
+    return migrated;
+  } catch (e) {
+    console.warn("loadSave failed, creating fresh save:", e);
+    const fresh = createDefaultSave();
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify(fresh));
+    } catch {
+      /* ignore write errors */
+    }
+    return fresh;
+  }
+}
+
+/** Écriture atomique dans localStorage (force la version et le timestamp) */
+export function saveGame(state: SaveState): void {
+  try {
+    const toPersist: SaveState = {
+      ...state,
+      version: SAVE_VERSION,
+      lastSave: Date.now(),
     };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(toPersist));
   } catch (e) {
-    console.warn("Failed to load save:", e);
-    return blankSave();
+    console.warn("saveGame failed:", e);
   }
-};
-
-export const saveGame = (state: SaveState) => {
-  try {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ ...state, lastSave: Date.now() })
-    );
-  } catch (e) {
-    console.warn("Failed to save game:", e);
-  }
-};
+}
+export { createDefaultSave as blankSave };

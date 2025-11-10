@@ -1,5 +1,3 @@
-// === Types extraits de MafiaIdleGame.tsx ===
-
 export type GeneratorKey =
   | "pickpocket"
   | "racket"
