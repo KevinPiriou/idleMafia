@@ -52,6 +52,7 @@ export type TopBarProps = {
   heatTooltipContent?: React.ReactNode;
   unreadJournal?: number;
   onShowJournal?: () => void;
+  journalTooltipContent?: React.ReactNode;
   saveVersion?: number;
   migratedFrom?: number | null;
 };
@@ -67,6 +68,7 @@ export default function TopBar({
   heatTooltipContent,
   unreadJournal,
   onShowJournal,
+  journalTooltipContent,
   saveVersion = 0,
   migratedFrom = null,
 }: TopBarProps) {
@@ -123,18 +125,11 @@ export default function TopBar({
             value={`Lv ${state.level}`}
             data-stat="level"
           />
-          <button
+          <JournalStatBox
+            unread={unreadJournal}
             onClick={onShowJournal}
-            className="relative px-3 py-1.5 rounded-md border border-yellow-600/40 bg-black/40 text-yellow-200 hover:bg-yellow-600/10 transition"
-            title="Ouvrir le journal des événements"
-          >
-            📰 Journal
-            {typeof unreadJournal === "number" && unreadJournal > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full text-[11px] flex items-center justify-center bg-red-600 text-white border border-red-300 shadow">
-                {unreadJournal > 99 ? "99+" : unreadJournal}
-              </span>
-            )}
-          </button>
+            tooltip={journalTooltipContent}
+          />
           <button
             onClick={() => setMuted(!muted)}
             className="px-4 py-2 bg-black/60 border border-yellow-700/60 rounded-xl hover:bg-yellow-700/20 transition backdrop-blur-sm"
@@ -214,5 +209,57 @@ export default function TopBar({
         );
       })()}
     </header>
+  );
+}
+function JournalStatBox({
+  unread = 0,
+  onClick,
+  tooltip,
+}: {
+  unread?: number;
+  onClick?: () => void;
+  tooltip?: React.ReactNode;
+}) {
+  return (
+    <div className="relative group">
+      <div
+        role="button"
+        data-action="open-journal"
+        onClick={onClick}
+        className="cursor-pointer rounded-xl border-2 border-yellow-600/60
+                   bg-black/60 hover:bg-yellow-600/10 transition px-4 py-3
+                   min-w-[180px] shadow-[0_4px_20px_rgba(212,175,55,0.08)]"
+      >
+        <div className="text-[11px] uppercase tracking-wider text-yellow-500 flex items-center gap-2">
+          <span className="text-yellow-400">📰</span> Journal
+          {unread > 0 && (
+            <span
+              className="ml-2 inline-flex items-center justify-center min-w-5 h-5 px-1
+                              rounded-full text-[11px] bg-red-600 text-white border border-red-300"
+            >
+              {unread > 99 ? "99+" : unread}
+            </span>
+          )}
+        </div>
+        <div className="text-lg font-bold text-yellow-100">
+          {unread > 0 ? `${unread} non lu${unread > 1 ? "s" : ""}` : "À jour"}
+        </div>
+      </div>
+
+      {/* Tooltip (hover) */}
+      {tooltip && (
+        <div
+          className="absolute left-0 top-[calc(100%+8px)] z-50 hidden
+                        group-hover:block"
+        >
+          <div
+            className="rounded-lg border border-yellow-600/30 bg-black/90 p-3
+                          shadow-[0_10px_30px_rgba(0,0,0,0.5)] min-w-[260px]"
+          >
+            {tooltip}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

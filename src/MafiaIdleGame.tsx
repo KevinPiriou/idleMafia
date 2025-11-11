@@ -57,6 +57,7 @@ import { useGameLoop } from "./hooks/useGameLoop";
 import { usePlayerActions } from "./hooks/usePlayerActions";
 import { EventJournal } from "./components/EventJournal";
 import { appendEvent, clearEventLog } from "./domain/journal";
+import type { EventLogEntry } from "./domain/types"; // en haut du fichier
 import {
   clamp,
   TOP_FILL_TIME,
@@ -354,9 +355,54 @@ export default function MafiaIdleRedesign() {
       if (timer) window.clearTimeout(timer);
     };
   }, []);
+  const journalTooltipContent = useMemo(() => {
+    const log = (state.eventLog ?? [])
+      .slice(-5) // 5 derniers
+      .reverse(); // plus récent en haut
 
+    const iconFor: Record<EventLogEntry["kind"], string> = {
+      event: "📣",
+      war: "⚔️",
+      economy: "📈",
+      system: "⚙️",
+      upgrade: "⬆️",
+      prestige: "🤝",
+    };
+
+    const fmtTime = (ts: number) =>
+      new Date(ts).toLocaleTimeString(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+    return (
+      <div className="min-w-64">
+        <div className="text-[11px] uppercase text-yellow-500 mb-1">
+          Derniers événements
+        </div>
+        {log.length === 0 ? (
+          <div className="text-xs text-zinc-300">Aucun événement récent.</div>
+        ) : (
+          <ul className="text-xs space-y-1">
+            {log.map((e) => (
+              <li key={e.id} className="flex items-start justify-between gap-3">
+                <span className="truncate">
+                  {iconFor[e.kind]} {e.title}
+                </span>
+                <span className="text-zinc-400 whitespace-nowrap">
+                  {fmtTime(e.ts)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="mt-2 text-[11px] text-yellow-400/80">
+          Cliquer pour ouvrir le journal
+        </div>
+      </div>
+    );
+  }, [state.eventLog]);
   const prodSummary = useMemo(() => selectProduction(state), [state]);
-
   const genSorted = useMemo(() => selectGenSorted(state), [state]);
   const assignedByGen = useMemo(() => {
     // Crée un record { genKey -> tableau de staff } pour éviter de filtrer à chaque carte
@@ -379,7 +425,11 @@ export default function MafiaIdleRedesign() {
   }, [state.eventLog, state.lastJournalSeenTs]);
   const openJournal = () => {
     setShowJournal(true);
-    setState((prev) => ({ ...prev, lastJournalSeenTs: Date.now() }));
+    setState((prev) => ({
+      ...prev,
+      lastJournalSeenTs: Date.now(),
+      tutorialEventJournalOpened: true, // ← pour l’étape tuto
+    }));
   };
   // Tooltips breakdowns
   const cashTooltipContent = useMemo(() => {
@@ -877,6 +927,7 @@ export default function MafiaIdleRedesign() {
             heatTooltipContent={heatTooltipContent}
             unreadJournal={unreadJournal}
             onShowJournal={openJournal}
+            journalTooltipContent={journalTooltipContent}
             saveVersion={state.version ?? SAVE_VERSION}
             migratedFrom={migratedFrom}
           />

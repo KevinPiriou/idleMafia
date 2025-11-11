@@ -54,7 +54,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   },
   {
     id: "explain_respect",
-    title: "� Le Respect",
+    title: "👑 Le Respect",
     description:
       "Le respect augmente avec vos revenus et vous permet d'asseoir votre autorité.",
     target: '[data-stat="respect"]',
@@ -66,7 +66,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     description:
       "Réinitialisez votre progression pour gagner des points d'Omertà et débloquer de puissants bonus permanents.",
     target: '[data-stat="omerta"]',
-    position: "left",
+    position: "bottom",
   },
   {
     id: "explain_level",
@@ -74,7 +74,15 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     description:
       "Gagnez de l'expérience en générant du cash et en dépensant de l'argent pour monter en niveau.",
     target: '[data-stat="level"]',
-    position: "left",
+    position: "bottom",
+  },
+  {
+    id: "journal-intro",
+    title: "Journal des événements",
+    description:
+      "Les actions importantes et les événements aléatoires sont consignés ici. Survole pour un aperçu, clique pour tout voir.",
+    target: '[data-stat="journal"]',
+    position: "bottom",
   },
   {
     id: "assign_staff",

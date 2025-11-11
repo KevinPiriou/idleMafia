@@ -88,6 +88,7 @@ export type SaveState = {
   xp: number;
   eventLog?: EventLogEntry[];
   lastJournalSeenTs?: number; // timestamp du dernier "vu"
+  tutorialEventJournalOpened?: boolean;
   // Generators et upgrades
   gens: Record<GeneratorKey, Generator>;
   upgrades: Record<string, Upgrade>;

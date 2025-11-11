@@ -31,7 +31,7 @@ export function createDefaultSave(): SaveState {
 
   return {
     version: SAVE_VERSION,
-    cash: 0,
+    cash: 10,
     respect: 0,
     heat: 0,
     level: 1,
@@ -48,6 +48,7 @@ export function createDefaultSave(): SaveState {
     equipped: {},
     eventLog: [],
     lastJournalSeenTs: Date.now(),
+    tutorialEventJournalOpened: false,
     families: typeof defaultFamilies === "function" ? defaultFamilies() : [],
     lastSave: Date.now(),
     tempGlobalBuffUntil: undefined,
@@ -92,6 +93,8 @@ function withDefaults(raw: Partial<SaveState> | undefined): SaveState {
     tempGlobalBuffUntil: from.tempGlobalBuffUntil ?? base.tempGlobalBuffUntil,
     eventLog: from.eventLog ?? base.eventLog,
     lastJournalSeenTs: from.lastJournalSeenTs ?? base.lastJournalSeenTs,
+    tutorialEventJournalOpened:
+      from.tutorialEventJournalOpened ?? base.tutorialEventJournalOpened,
   };
 }
 
@@ -117,6 +120,9 @@ function migrateSaveState(input: Partial<SaveState> | undefined): SaveState {
     if (typeof s.lastJournalSeenTs !== "number") {
       // on initialise à lastSave si dispo pour éviter de marquer tout l'historique en "non-lu"
       s.lastJournalSeenTs = (s.lastSave as number) ?? Date.now();
+    }
+    if (typeof s.tutorialEventJournalOpened !== "boolean") {
+      s.tutorialEventJournalOpened = false;
     }
     // clamp chaleur
     if (typeof s.heat === "number") {
