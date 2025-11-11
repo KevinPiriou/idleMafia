@@ -17,6 +17,7 @@ export const defaultGenerators = (): Record<GeneratorKey, Generator> => ({
     baseHeat: 0.02,
     legal: false,
     owned: 0,
+    multiplier: 1,
   },
   racket: {
     key: "racket",
@@ -28,6 +29,7 @@ export const defaultGenerators = (): Record<GeneratorKey, Generator> => ({
     baseHeat: 0.06,
     legal: false,
     owned: 0,
+    multiplier: 1,
   },
   club: {
     key: "club",
@@ -39,6 +41,7 @@ export const defaultGenerators = (): Record<GeneratorKey, Generator> => ({
     baseHeat: 0.12,
     legal: false,
     owned: 0,
+    multiplier: 1,
   },
   casino: {
     key: "casino",
@@ -50,6 +53,7 @@ export const defaultGenerators = (): Record<GeneratorKey, Generator> => ({
     baseHeat: 0.22,
     legal: false,
     owned: 0,
+    multiplier: 1,
   },
   olive: {
     key: "olive",
@@ -61,6 +65,7 @@ export const defaultGenerators = (): Record<GeneratorKey, Generator> => ({
     baseHeat: 0.0,
     legal: true,
     owned: 0,
+    multiplier: 1,
   },
   bar: {
     key: "bar",
@@ -72,6 +77,7 @@ export const defaultGenerators = (): Record<GeneratorKey, Generator> => ({
     baseHeat: 0.01,
     legal: true,
     owned: 0,
+    multiplier: 1,
   },
   grocery: {
     key: "grocery",
@@ -83,6 +89,7 @@ export const defaultGenerators = (): Record<GeneratorKey, Generator> => ({
     baseHeat: 0.005,
     legal: true,
     owned: 0,
+    multiplier: 1,
   },
 });
 

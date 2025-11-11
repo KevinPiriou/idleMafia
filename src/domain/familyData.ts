@@ -1,28 +1,4 @@
-export type GeneratorKey =
-  | "pickpocket"
-  | "racket"
-  | "club"
-  | "casino"
-  | "olive"
-  | "bar"
-  | "grocery";
-export type FamilyState = "peace" | "war" | "partnership";
-export type Family = {
-  id: string;
-  name: string;
-  state: FamilyState;
-  partnershipSectors: GeneratorKey[];
-  lastWarTs?: number;
-  econ?: {
-    cash: number;
-    respect: number;
-    members: number;
-    weapons: number;
-    vehicles: number;
-    tier?: "normal" | "bankrupt" | "boss";
-  };
-  econFactor?: number;
-};
+import type { Family } from "./types";
 
 export function defaultFamilies(): Family[] {
   return [
@@ -40,6 +16,7 @@ export function defaultFamilies(): Family[] {
         tier: "normal",
       },
       econFactor: 1.0,
+      intel: 0,
     },
     {
       id: "f2",
@@ -55,6 +32,7 @@ export function defaultFamilies(): Family[] {
         tier: "normal",
       },
       econFactor: 0.9,
+      intel: 0,
     },
     {
       id: "f3",
@@ -70,6 +48,7 @@ export function defaultFamilies(): Family[] {
         tier: "normal",
       },
       econFactor: 1.1,
+      intel: 0,
     },
   ];
 }

@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
-import { EVENTS } from "../domain/events";
-import type { SaveState } from "../domain/types";
+import { useState } from "react";
+import type { RandomEventDef, SaveState } from "../domain/types";
 
 export default function EventModal({
   onClose,
   onApply,
   onLog,
+  event,
 }: {
   onClose: () => void;
   onApply: (apply: (s: SaveState) => SaveState) => {
@@ -18,12 +18,10 @@ export default function EventModal({
     choice: string;
     desc: string;
     deltas: { cash?: number; respect?: number; heat?: number };
+    eventId: string;
   }) => void;
+  event: RandomEventDef;
 }) {
-  const ev = useMemo(
-    () => EVENTS[Math.floor(Math.random() * EVENTS.length)],
-    []
-  );
   const [flash, setFlash] = useState<"success" | "fail" | null>(null);
   const [delta, setDelta] = useState<null | {
     cash: number;
@@ -34,19 +32,20 @@ export default function EventModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
       <div className="relative w-full max-w-lg mx-4 bg-linear-to-br from-violet-800/90 to-purple-900/90 border-2 border-violet-400 rounded-2xl p-6 shadow-2xl">
-        <div className="text-2xl font-bold mb-2 text-white">{ev.title}</div>
-        <div className="text-sm mb-4 text-violet-100">{ev.desc}</div>
+        <div className="text-2xl font-bold mb-2 text-white">{event.title}</div>
+        <div className="text-sm mb-4 text-violet-100">{event.desc}</div>
         <div className="flex flex-col gap-2">
-          {ev.choices.map((c, i) => (
+          {event.choices.map((c, i) => (
             <div key={i} className="flex flex-col gap-1">
               <button
                 onClick={() => {
                   const d = onApply(c.apply);
                   onLog?.({
-                    title: ev.title,
-                    desc: ev.desc,
+                    title: event.title,
+                    desc: event.desc,
                     choice: c.label,
                     deltas: d,
+                    eventId: event.id,
                   });
                   setDelta(d);
                   const good =

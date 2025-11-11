@@ -17,6 +17,7 @@ export type Generator = {
   baseHeat: number;
   legal: boolean;
   owned: number;
+  multiplier: number;
 };
 
 export type Upgrade = {
@@ -58,6 +59,7 @@ export type Family = {
     tier?: "normal" | "bankrupt" | "boss";
   };
   econFactor?: number;
+  intel: number;
 };
 
 export type Rarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
@@ -143,4 +145,21 @@ export type EventLogEntry = {
   details?: string[]; // paragraphes optionnels
   deltas?: { cash?: number; respect?: number; heat?: number; tension?: number };
   tags?: string[]; // ex: ["random","success"]
+};
+
+export type RandomEventChoice = {
+  label: string;
+  apply: (state: SaveState) => SaveState;
+  meta?: {
+    successChance?: number; // 0..1 if applicable
+    info?: string; // textual amplitude estimate
+  };
+};
+
+export type RandomEventDef = {
+  id: string;
+  title: string;
+  desc: string;
+  choices: RandomEventChoice[];
+  familyId?: string;
 };

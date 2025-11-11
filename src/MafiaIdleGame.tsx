@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React, {
   useEffect,
   useMemo,
@@ -14,13 +15,9 @@ import type {
   WeaponItem,
   VehicleItem,
   FamilyState,
+  RandomEventDef,
 } from "./domain/types";
-import {
-  computeWarPower,
-  simulateFamiliesEconomy,
-  //computeFamilyScore,
-  //computeCompositePower,
-} from "./domain/family";
+import { computeWarPower, simulateFamiliesEconomy } from "./domain/family";
 
 import {
   loadSave,
@@ -57,7 +54,7 @@ import { useGameLoop } from "./hooks/useGameLoop";
 import { usePlayerActions } from "./hooks/usePlayerActions";
 import { EventJournal } from "./components/EventJournal";
 import { appendEvent, clearEventLog } from "./domain/journal";
-import type { EventLogEntry } from "./domain/types"; // en haut du fichier
+import type { EventLogEntry } from "./domain/types";
 import {
   clamp,
   TOP_FILL_TIME,
@@ -76,7 +73,7 @@ import {
   selectRevenuePerSecForKey,
   selectGenSorted,
 } from "./store/selectors";
-import { pickRarity } from "./domain/events";
+import { EVENTS, pickRarity } from "./domain/events";
 import { applyInvestment } from "./domain/investments";
 import { useGameStore, createInitialFromSave } from "./store/root";
 import { prestigeGain } from "./domain/prestige";
@@ -129,7 +126,7 @@ export default function MafiaIdleRedesign() {
   const scale = 1;
   const [showUpgradesModal, setShowUpgradesModal] = useState(false);
   const [showInfluenceModal, setShowInfluenceModal] = useState(false);
-  const [showEvent, setShowEvent] = useState(false);
+  const [currentEvent, setCurrentEvent] = useState<RandomEventDef | null>(null);
   const [relationsModal, setRelationsModal] = useState(false);
   const [tensionModal, setTensionModal] = useState<null | { cost: number }>(
     null
@@ -213,6 +210,18 @@ export default function MafiaIdleRedesign() {
     return s;
   });
 
+  // DEV: Expose a cheat function to the console
+  useEffect(() => {
+    (window as any).addCash = (amount: number) => {
+      setState((prev) => ({ ...prev, cash: prev.cash + amount }));
+    };
+    (window as any).addRespect = (amount: number) => {
+      setState((prev) => ({ ...prev, respect: prev.respect + amount }));
+    };
+    (window as any).addHeat = (amount: number) => {
+      setState((prev) => ({ ...prev, heat: prev.heat + amount }));
+    };
+  }, []);
   // Hydrate global store on mount with initial save state
   useEffect(() => {
     try {
@@ -340,21 +349,44 @@ export default function MafiaIdleRedesign() {
     }
   }, 250);
 
+  const [recentEvents, setRecentEvents] = useState<string[]>([]);
+
   // Random events scheduler
   useEffect(() => {
     let timer: number | null = null;
-    const schedule = () => {
-      const delay = 60000 + Math.random() * 60000; // 60-120s
+    if (!currentEvent) {
+      const delay = 120000 + Math.random() * 120000; // 120-240s
       timer = window.setTimeout(() => {
-        setShowEvent(true);
-        schedule();
+        const availableEvents = EVENTS.filter(
+          (e) => !recentEvents.includes(e.id)
+        );
+        if (availableEvents.length > 0) {
+          let event =
+            availableEvents[Math.floor(Math.random() * availableEvents.length)];
+
+          // Handle dynamic family events
+          if (event.id.startsWith("family_")) {
+            const otherFamilies = state.families.slice(1);
+            if (otherFamilies.length > 0) {
+              const family =
+                otherFamilies[Math.floor(Math.random() * otherFamilies.length)];
+              event = {
+                ...event,
+                title: event.title.replace("{familyName}", family.name),
+                desc: event.desc.replace("{familyName}", family.name),
+                familyId: family.id, // Pass familyId for actions
+              };
+            }
+          }
+          setCurrentEvent(event);
+        }
       }, delay) as unknown as number;
-    };
-    schedule();
+    }
     return () => {
       if (timer) window.clearTimeout(timer);
     };
-  }, []);
+  }, [currentEvent, recentEvents, state.families]);
+
   const journalTooltipContent = useMemo(() => {
     const log = (state.eventLog ?? [])
       .slice(-5) // 5 derniers
@@ -869,9 +901,10 @@ export default function MafiaIdleRedesign() {
       <ParticleCanvas />
 
       {/* Random Event (centered, forced choice) */}
-      {showEvent && (
+      {currentEvent && (
         <EventModal
-          onClose={() => setShowEvent(false)}
+          event={currentEvent}
+          onClose={() => setCurrentEvent(null)}
           onApply={(apply) => {
             let deltas = { cash: 0, respect: 0, heat: 0 };
             setState((prev) => {
@@ -881,11 +914,16 @@ export default function MafiaIdleRedesign() {
                 respect: Math.round(after.respect - prev.respect),
                 heat: Number((after.heat - prev.heat).toFixed(2)),
               };
-              return after; // ⬅️ plus d'appendEvent ici
+              return after;
             });
             return deltas;
           }}
-          onLog={({ title, desc, choice, deltas }) => {
+          onLog={({ title, desc, choice, deltas, eventId }) => {
+            setRecentEvents((prev) => [...prev, eventId]);
+            setTimeout(() => {
+              setRecentEvents((prev) => prev.filter((id) => id !== eventId));
+            }, 2 * 60 * 60 * 1000); // 2 hours
+
             setState((prev) => {
               const good =
                 (deltas.cash ?? 0) +
@@ -895,8 +933,8 @@ export default function MafiaIdleRedesign() {
               return appendEvent(prev, {
                 kind: "event",
                 title,
-                summary: desc, // texte de l'événement
-                details: [`Choix : ${choice}`], // on garde le choix en détail
+                summary: desc,
+                details: [`Choix : ${choice}`],
                 deltas,
                 tags: ["random", good ? "success" : "fail"],
               });
@@ -1711,103 +1749,3 @@ export default function MafiaIdleRedesign() {
     </div>
   );
 }
-
-// ----------------------------
-// Sous-composants UI
-// (RelationBar removed - replaced by inline UI in Relations card)
-
-// RelationBar removed
-
-// Modal moved to src/Modal.tsx
-
-// ----------------------------
-// Random Events System
-// ----------------------------
-
-// Events data moved to domain/events
-
-/* RandomEvent extracted to components/EventModal */
-/*
-function RandomEvent({
-  onClose,
-  onApply,
-}: {
-  onClose: () => void;
-  onApply: (apply: (s: SaveState) => SaveState) => {
-    cash: number;
-    respect: number;
-    heat: number;
-  };
-}) {
-  const ev = useMemo(
-    () => EVENTS[Math.floor(Math.random() * EVENTS.length)],
-    []
-  );
-  const [flash, setFlash] = useState<"success" | "fail" | null>(null);
-  const [delta, setDelta] = useState<null | {
-    cash: number;
-    respect: number;
-    heat: number;
-  }>(null);
-  const pick = (apply: (s: SaveState) => SaveState) => {
-    const d = onApply(apply);
-    setDelta(d);
-    const good = (d.cash ?? 0) + (d.respect ?? 0) - Math.abs(d.heat ?? 0) > 0;
-    setFlash(good ? "success" : "fail");
-    setTimeout(() => onClose(), 1200);
-  };
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <div className="relative w-full max-w-lg mx-4 bg-linear-to-br from-violet-800/90 to-purple-900/90 border-2 border-violet-400 rounded-2xl p-6 shadow-2xl">
-        <div className="text-2xl font-bold mb-2 text-white">{ev.title}</div>
-        <div className="text-sm mb-4 text-violet-100">{ev.desc}</div>
-        <div className="flex flex-col gap-2">
-          {ev.choices.map((c, i) => (
-            <div key={i} className="flex flex-col gap-1">
-              <button
-                onClick={() => pick(c.apply)}
-                className="px-4 py-3 rounded-lg bg-white/10 border border-white/30 hover:bg-white/20 transition text-sm text-left text-white"
-              >
-                {c.label}
-              </button>
-              {c.meta && (
-                <div className="text-[11px] text-violet-200 ml-2">
-                  {typeof c.meta.successChance === "number" && (
-                    <span>
-                      Chance de succès {(c.meta.successChance * 100).toFixed(0)}
-                      %
-                    </span>
-                  )}
-                  {c.meta.info && <span className="ml-2">• {c.meta.info}</span>}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-        {flash && (
-          <div
-            className={`pointer-events-none absolute inset-0 rounded-2xl ${
-              flash === "success" ? "bg-emerald-400/30" : "bg-red-500/30"
-            } animate-pulse`}
-          />
-        )}
-        {delta && (
-          <div className="mt-3 text-xs text-white/90">
-            Résultat:{" "}
-            {delta.cash ? `💰 ${delta.cash > 0 ? "+" : ""}${delta.cash} ` : ""}
-            {delta.respect
-              ? `• 👑 ${delta.respect > 0 ? "+" : ""}${delta.respect} `
-              : ""}
-            {typeof delta.heat === "number"
-              ? `• 🔥 ${delta.heat > 0 ? "+" : ""}${delta.heat}`
-              : ""}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-*/
-
-// ----------------------------
-// Families Intel Component

@@ -118,7 +118,7 @@ export function EventJournal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
       <div className="relative w-full max-w-6xl mx-4 rounded-2xl overflow-hidden border-2 border-yellow-600 shadow-[0_10px_40px_rgba(212,175,55,0.25)]">
         {/* Header */}
-        <div className="bg-linear-to-r from-black/90 via-amber-900/30 to-black/90 px-6 py-4">
+        <div className="bg-linear-to-r from-black/90 via-amber-900/80 to-black/90 px-6 py-4">
           <div className="flex items-start md:items-center justify-between gap-4 flex-col md:flex-row">
             <div>
               <div className="text-[11px] tracking-[0.2em] uppercase text-yellow-400/70">
