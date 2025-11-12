@@ -8,7 +8,10 @@ export default function EventModal({
   event,
 }: {
   onClose: () => void;
-  onApply: (apply: (s: SaveState) => SaveState) => {
+  onApply: (
+    apply: (s: SaveState) => SaveState,
+    choiceLabel: string
+  ) => {
     cash: number;
     respect: number;
     heat: number;
@@ -39,7 +42,7 @@ export default function EventModal({
             <div key={i} className="flex flex-col gap-1">
               <button
                 onClick={() => {
-                  const d = onApply(c.apply);
+                  const d = onApply(c.apply, c.label);
                   onLog?.({
                     title: event.title,
                     desc: event.desc,

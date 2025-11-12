@@ -132,6 +132,17 @@ export type SaveState = {
   tutorialCompleted?: boolean;
   tutorialStep?: number;
 
+  // Missions
+  missionsProgress?: Record<
+    string,
+    {
+      missionId: string;
+      status: "locked" | "active" | "completed";
+      tasksProgress: Record<string, number>;
+      completedAt?: number;
+    }
+  >;
+
   // Meta
   lastSave: number;
   version?: number;

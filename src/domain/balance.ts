@@ -16,4 +16,7 @@ export const XP_PER_DOLLAR_SPENT = 0.0001; // xp per $ spent on generators
 export const XP_PER_UPGRADE_DOLLAR = 0.0002; // xp per $ spent on upgrades
 export const XP_PER_INFLUENCE_DOLLAR = 0.0002; // xp per $ spent on influence
 
+// Tension (Police pressure)
+export const TENSION_DECAY_PER_SECOND = 0.15; // 15% per second passive reduction when no illegal ops
+
 // Future: move more constants here (war chances, cooldowns, tensions, durations)

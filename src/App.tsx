@@ -1,7 +1,12 @@
 import MafiaIdleGame from "./MafiaIdleGame";
+import { ToastProvider } from "./components/Toast";
 
 function App() {
-  return <MafiaIdleGame />;
+  return (
+    <ToastProvider>
+      <MafiaIdleGame />
+    </ToastProvider>
+  );
 }
 
 export default App;

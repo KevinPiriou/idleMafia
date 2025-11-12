@@ -1,5 +1,8 @@
-import { useGameStore, selectBuffActive } from "../store/root";
+import { useGameStore } from "../store/root";
 import { formatNumber } from "../domain/format";
+import { BuffIndicator } from "./BuffIndicator";
+import { StatusEffects } from "./StatusEffects";
+import { MissionTracker } from "./MissionTracker";
 import type { SaveState } from "../domain/types";
 
 type StatBoxProps = {
@@ -55,6 +58,7 @@ export type TopBarProps = {
   journalTooltipContent?: React.ReactNode;
   saveVersion?: number;
   migratedFrom?: number | null;
+  onShowMissions?: () => void;
 };
 
 export default function TopBar({
@@ -71,12 +75,12 @@ export default function TopBar({
   journalTooltipContent,
   saveVersion = 0,
   migratedFrom = null,
+  onShowMissions,
 }: TopBarProps) {
   // Store selectors (HUD wiring)
   const cashSel = useGameStore((s) => s.cash);
   const respectSel = useGameStore((s) => s.respect);
   const heatSel = useGameStore((s) => s.heat);
-  const buffActiveSel = useGameStore(selectBuffActive);
 
   return (
     <header className="mb-6">
@@ -125,6 +129,7 @@ export default function TopBar({
             value={`Lv ${state.level}`}
             data-stat="level"
           />
+          <MissionTracker state={state} onOpenMissions={onShowMissions} />
           <JournalStatBox
             unread={unreadJournal}
             onClick={onShowJournal}
@@ -160,16 +165,8 @@ export default function TopBar({
         const partner = state.families.filter(
           (f) => f.state === "partnership"
         ).length;
-        const buffActive = buffActiveSel;
-        const remainMs =
-          buffActive && state.tempGlobalBuffUntil
-            ? state.tempGlobalBuffUntil - Date.now()
-            : 0;
-        const remain = buffActive
-          ? new Date(remainMs).toISOString().substring(11, 19)
-          : null;
         return (
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-4 flex flex-wrap gap-3 items-center">
             <span className="px-2 py-1 rounded-full text-[11px] border border-yellow-600/40 bg-black/40 text-zinc-200">
               Paix: <b className="text-emerald-400">{peace}</b>
             </span>
@@ -179,11 +176,10 @@ export default function TopBar({
             <span className="px-2 py-1 rounded-full text-[11px] border border-yellow-600/40 bg-black/40 text-zinc-200">
               Partenariat: <b className="text-indigo-300">{partner}</b>
             </span>
-            {buffActive && (
-              <span className="px-2 py-1 rounded-full text-[11px] border border-yellow-600 bg-yellow-600/20 text-yellow-300">
-                +50% toutes filières • {remain}
-              </span>
-            )}
+
+            {/* Affichage du buff amélioré */}
+            <BuffIndicator state={state} />
+
             <div className="ml-2 flex items-center gap-2">
               <span
                 className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold
@@ -208,6 +204,9 @@ export default function TopBar({
           </div>
         );
       })()}
+
+      {/* Affichage des effets de statut */}
+      <StatusEffects state={state} />
     </header>
   );
 }

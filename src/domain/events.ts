@@ -1,5 +1,22 @@
 import type { SaveState, Rarity, RandomEventDef } from "./types";
 
+export const eventPreconditions: Record<string, (s: SaveState) => boolean> = {
+  invest: (s) => s.cash > 1000,
+  betray: (s) => s.families.some((f) => f.state === "partnership"),
+  inspection: (s) => s.level > 3,
+  illegalDeal: (s) => s.cash > 5000,
+  rumor: (s) => s.respect > 100,
+  insider: (s) => s.gens.casino.owned > 0,
+  police_control: (s) => s.heat > 20,
+  informer_deal: (s) => s.cash > 5000 && s.families.length > 1,
+  good_harvest: (s) => Object.values(s.gens).some((g) => g.owned > 5),
+  customs_seizure: (s) => s.cash > 10000,
+  territory_war: (s) => s.respect > 200,
+  family_tribute_demand: (s) => s.families.length > 1,
+  family_peace_offer: (s) => s.families.some((f) => f.state === "war"),
+  family_joint_operation: (s) => s.families.length > 1 && s.cash > 100000,
+};
+
 export const rarityWeights: Array<{ r: Rarity; w: number }> = [
   { r: "legendary", w: 1 },
   { r: "epic", w: 3 },
@@ -436,12 +453,17 @@ export const EVENTS: RandomEventDef[] = [
     desc: "Un jeune loup aux dents longues veut rejoindre vos rangs. Il a du potentiel, mais il est encore vert.",
     choices: [
       {
-        label: "Le prendre sous votre aile (gratuit)",
+        label: "Le prendre sous votre aile (+2% revenus permanent, +20👑)",
         apply: (s) => {
-          // Logique pour ajouter un membre au staff (simplifié ici)
-          return { ...s, respect: s.respect + 5 };
+          // Augmente le multiplicateur permanent de 2% pour chaque recrue
+          const newMult = (s.permaGlobalMult ?? 1) * 1.02;
+          return {
+            ...s,
+            respect: s.respect + 20,
+            permaGlobalMult: newMult,
+          };
         },
-        meta: { info: "Vous gagnez un nouveau membre (non implémenté)." },
+        meta: { info: "Une nouvelle recrue augmente vos opérations." },
       },
       {
         label: "L'envoyer faire ses preuves",
@@ -1148,13 +1170,22 @@ export const EVENTS: RandomEventDef[] = [
     desc: "Vous héritez d'un restaurant d'un Don récemment décédé. L'affaire est rentable, mais elle est criblée de dettes.",
     choices: [
       {
-        label: "Accepter l'héritage (+$20k/h, -$100k initial)",
-        apply: (s) => ({
-          ...s,
-          cash: s.cash - 100000,
-          // Logique pour ajouter un nouveau générateur ou un buff (simplifié)
-        }),
-        meta: { info: "Un investissement sur le long terme." },
+        label: "Accepter l'héritage (+15% revenus 3h, -$100k)",
+        apply: (s) => {
+          // Génère un petit buff permanent de 15% sous forme de multiplicateur
+          const newMult = (s.permaGlobalMult ?? 1) * 1.05; // Ajoute un petit bonus permanent
+          return {
+            ...s,
+            cash: Math.max(0, s.cash - 100000),
+            permaGlobalMult: newMult,
+            respect: s.respect + 15,
+            tempGlobalBuffUntil: Math.max(
+              s.tempGlobalBuffUntil ?? 0,
+              Date.now() + 3 * 60 * 60 * 1000
+            ),
+          };
+        },
+        meta: { info: "Un investissement lucratif. Restaurant opérationnel!" },
       },
       {
         label: "Refuser l'héritage",
@@ -1177,12 +1208,15 @@ export const EVENTS: RandomEventDef[] = [
         meta: { info: "Les affaires reprennent." },
       },
       {
-        label: "Soutenir les grévistes (+5👑, -5% revenus pendant 1h)",
+        label: "Soutenir les grévistes (+5👑, +relations)",
         apply: (s) => ({
           ...s,
           respect: s.respect + 5,
+          tension: Math.max(0, (s.tension || 0) - 5), // Réduit la tension avec les groupes
         }),
-        meta: { info: "Vous gagnez le soutien du syndicat." },
+        meta: {
+          info: "Vous gagnez le soutien du syndicat et réduisez la tension.",
+        },
       },
     ],
   },
@@ -1216,12 +1250,22 @@ export const EVENTS: RandomEventDef[] = [
     choices: [
       {
         label:
-          "Organiser des soirées privées (+25% revenus casinos pendant 1h)",
+          "Organiser des soirées privées (+25% revenus casinos pendant 2h)",
         apply: (s) => {
-          // Logique de buff temporaire (simplifié)
-          return { ...s, cash: s.cash + 20000 };
+          // Applique un buff temporaire de 2 heures (7200000 ms)
+          return {
+            ...s,
+            tempGlobalBuffUntil: Math.max(
+              s.tempGlobalBuffUntil ?? 0,
+              Date.now() + 2 * 60 * 60 * 1000
+            ),
+            cash: s.cash + 50000, // Mise de fonds initiale
+            respect: s.respect + 10,
+          };
         },
-        meta: { info: "Les stars se pressent à vos tables de jeu." },
+        meta: {
+          info: "Les stars se pressent à vos tables de jeu. +50% revenus!",
+        },
       },
       {
         label: "Ignorer l'événement",
@@ -1321,6 +1365,1235 @@ export const EVENTS: RandomEventDef[] = [
       {
         label: "Refuser, trop risqué",
         apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "loan_shark",
+    title: "Usurier local",
+    desc: "Un usurier propose de vous prêter de l'argent à des taux avantageux... pour le crime organisé.",
+    choices: [
+      {
+        label: "Emprunter +$50k",
+        apply: (s) => ({
+          ...s,
+          cash: s.cash + 50000,
+        }),
+        meta: { info: "Argent frais avec des conséquences futures." },
+      },
+      {
+        label: "Refuser",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "spy_network",
+    title: "Réseau d'espions",
+    desc: "Un agent propose de mettre en place un réseau d'espions pour surveiller les familles rivales.",
+    choices: [
+      {
+        label: "Créer le réseau (-$30k, +20👑)",
+        apply: (s) => ({
+          ...s,
+          cash: Math.max(0, s.cash - 30000),
+          respect: s.respect + 20,
+        }),
+        meta: { info: "Information = pouvoir." },
+      },
+      {
+        label: "Pas le temps",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "bribe_official",
+    title: "Fonctionnaire corruptible",
+    desc: "Un officiel gouvernemental offre ses services contre une corruption régulière.",
+    choices: [
+      {
+        label: "Créer un lien (-$40k/mois, -15🔥 permanent)",
+        apply: (s) => ({
+          ...s,
+          cash: Math.max(0, s.cash - 40000),
+          heat: Math.max(0, s.heat - 15),
+          respect: s.respect + 5,
+        }),
+        meta: { info: "Accès protégé aux informations gouvernementales." },
+      },
+      {
+        label: "Déclin",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "rival_defection",
+    title: "Défection d'un rival",
+    desc: "Un cadre d'une famille rivale veut changer de camp. Il prétend avoir des secrets précieux.",
+    choices: [
+      {
+        label: "Le recruter (-$35k, +30👑, +20🔥)",
+        apply: (s) => ({
+          ...s,
+          cash: Math.max(0, s.cash - 35000),
+          respect: s.respect + 30,
+          heat: Math.min(100, s.heat + 20),
+        }),
+        meta: { info: "Un atout précieux, mais dangereux." },
+      },
+      {
+        label: "Le refuser",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "smuggling_route",
+    title: "Nouvelle route de contrebande",
+    desc: "Un contact offre une route sûre pour importer des marchandises illégales.",
+    choices: [
+      {
+        label: "Établir la route (+$25k, +8🔥)",
+        apply: (s) => ({
+          ...s,
+          cash: s.cash + 25000,
+          heat: Math.min(100, s.heat + 8),
+        }),
+        meta: { info: "Revenus via contrebande accélérée." },
+      },
+      {
+        label: "Trop dangereux",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "bodyguard_contract",
+    title: "Contrat de sécurité",
+    desc: "Une célébrité ou un politicien veut embaucher vos meilleurs hommes comme gardes du corps.",
+    choices: [
+      {
+        label: "Accepter (+$20k/h, +10👑)",
+        apply: (s) => ({
+          ...s,
+          cash: s.cash + 20000,
+          respect: s.respect + 10,
+        }),
+        meta: { info: "Service respectueux et lucratif." },
+      },
+      {
+        label: "Nos hommes ne sont pas des baby-sitters",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "underground_casino_expansion",
+    title: "Expansion du casino clandestin",
+    desc: "Une opportunité d'étendre votre casino clandestin avec des jeux de plus haut niveau.",
+    choices: [
+      {
+        label: "Expansion (+$40k, +25% revenus casino/h)",
+        apply: (s) => {
+          const newMult = (s.permaGlobalMult ?? 1) * 1.08;
+          return {
+            ...s,
+            cash: Math.max(0, s.cash - 40000),
+            permaGlobalMult: newMult,
+            heat: Math.min(100, s.heat + 5),
+          };
+        },
+        meta: { info: "Les hauts-fonds attirent les gros joueurs." },
+      },
+      {
+        label: "Rester discret",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "political_alliance",
+    title: "Alliance politique",
+    desc: "Un politicien en montée vous propose une alliance contre d'autres puissances.",
+    choices: [
+      {
+        label: "Former l'alliance (-$25k, -20🔥, +20👑)",
+        apply: (s) => ({
+          ...s,
+          cash: Math.max(0, s.cash - 25000),
+          heat: Math.max(0, s.heat - 20),
+          respect: s.respect + 20,
+        }),
+        meta: { info: "Protection politique en échange de faveurs." },
+      },
+      {
+        label: "Rester neutre",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "street_legend",
+    title: "Légende de rue",
+    desc: "Vos exploits créent une légende urbaine qui vous précède. Utiliser votre réputation.",
+    choices: [
+      {
+        label: "Exploiter la légende (+25% respect/h pendant 1h)",
+        apply: (s) => ({
+          ...s,
+          respect: s.respect + 100,
+          tempGlobalBuffUntil: Math.max(
+            s.tempGlobalBuffUntil ?? 0,
+            Date.now() + 60 * 60 * 1000
+          ),
+        }),
+        meta: { info: "La peur est aussi utile que l'argent." },
+      },
+      {
+        label: "Ignorer",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "legitimate_business",
+    title: "Façade légitime",
+    desc: "Une opportunité d'acquérir une chaîne de magasins pour blanchir votre argent.",
+    choices: [
+      {
+        label: "Acheter la chaîne (-$100k, +5% revenus/h)",
+        apply: (s) => {
+          const newMult = (s.permaGlobalMult ?? 1) * 1.05;
+          return {
+            ...s,
+            cash: Math.max(0, s.cash - 100000),
+            permaGlobalMult: newMult,
+            heat: Math.max(0, s.heat - 10),
+          };
+        },
+        meta: { info: "Blanchiment massif d'argent sale." },
+      },
+      {
+        label: "Pas intéressé",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "hacker_collective",
+    title: "Collectif de hackers",
+    desc: "Des hackers proposent de dérober des données bancaires et gouvernementales.",
+    choices: [
+      {
+        label: "Engager les hackers (-$50k, +$75k)",
+        apply: (s) => ({
+          ...s,
+          cash: s.cash + 25000,
+          heat: Math.min(100, s.heat + 12),
+        }),
+        meta: { info: "Cybercriminalité sophistiquée." },
+      },
+      {
+        label: "Rester hors du numérique",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "turf_claim",
+    title: "Revendication de territoire",
+    desc: "Un gang local conteste votre contrôle d'une zone stratégique.",
+    choices: [
+      {
+        label: "Massacrer (+20👑, +30⚡, +15🔥)",
+        apply: (s) => ({
+          ...s,
+          respect: s.respect + 20,
+          tension: Math.min(100, (s.tension ?? 0) + 30),
+          heat: Math.min(100, s.heat + 15),
+        }),
+        meta: { info: "Violente affirmation de domination." },
+      },
+      {
+        label: "Négocier (-$10k, +10👑)",
+        apply: (s) => ({
+          ...s,
+          cash: Math.max(0, s.cash - 10000),
+          respect: s.respect + 10,
+        }),
+        meta: { info: "Maintenir la paix par le commerce." },
+      },
+    ],
+  },
+  {
+    id: "witness_protection",
+    title: "Protection de témoins",
+    desc: "Vous devez envoyer un témoin se cacher dans une autre ville.",
+    choices: [
+      {
+        label: "Organiser la fuite (-$15k, +5👑)",
+        apply: (s) => ({
+          ...s,
+          cash: Math.max(0, s.cash - 15000),
+          respect: s.respect + 5,
+        }),
+        meta: { info: "Loyauté envers les troupes." },
+      },
+      {
+        label: "Le laisser se débrouiller (-10👑)",
+        apply: (s) => ({
+          ...s,
+          respect: Math.max(0, s.respect - 10),
+        }),
+        meta: { info: "L'armada apprendra la trahison." },
+      },
+    ],
+  },
+  {
+    id: "cultural_event",
+    title: "Événement culturel",
+    desc: "Un festival ou une exposition d'art attire une clientèle riche et influente.",
+    choices: [
+      {
+        label: "Sponsoriser (-$20k, +15👑, +2% revenus/h)",
+        apply: (s) => {
+          const newMult = (s.permaGlobalMult ?? 1) * 1.02;
+          return {
+            ...s,
+            cash: Math.max(0, s.cash - 20000),
+            respect: s.respect + 15,
+            permaGlobalMult: newMult,
+          };
+        },
+        meta: { info: "Les arts financent vos opérations." },
+      },
+      {
+        label: "Ignorer",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "debt_collection",
+    title: "Recouvrement de dette",
+    desc: "D'autres criminels vous doivent de l'argent. Il est temps de collecter.",
+    choices: [
+      {
+        label: "Collecter les dettes (+$80k, +10👑)",
+        apply: (s) => ({
+          ...s,
+          cash: s.cash + 80000,
+          respect: s.respect + 10,
+          heat: Math.min(100, s.heat + 5),
+        }),
+        meta: { info: "Quand les dettes se transforment en argent." },
+      },
+      {
+        label: "Donner un délai supplémentaire",
+        apply: (s) => ({
+          ...s,
+          respect: Math.max(0, s.respect - 5),
+        }),
+        meta: { info: "La faiblesse se propage." },
+      },
+    ],
+  },
+  {
+    id: "hostage_exchange",
+    title: "Échange d'otages",
+    desc: "Récupérer un de vos hommes emprisonné en échangeant contre un otage.",
+    choices: [
+      {
+        label: "Négocier l'échange (-$25k, +20👑)",
+        apply: (s) => ({
+          ...s,
+          cash: Math.max(0, s.cash - 25000),
+          respect: s.respect + 20,
+        }),
+        meta: { info: "Récupère un homme en échange d'argent/biens." },
+      },
+      {
+        label: "L'abandonner (l'oublier)",
+        apply: (s) => ({
+          ...s,
+          respect: Math.max(0, s.respect - 25),
+        }),
+        meta: { info: "Terrible pour le moral des troupes." },
+      },
+    ],
+  },
+  {
+    id: "rare_resource_deal",
+    title: "Accord sur ressource rare",
+    desc: "Un contact offre un accès exclusif à une ressource précieuse et revendicable.",
+    choices: [
+      {
+        label: "Sécuriser l'accès (-$60k, +10% revenus permanent)",
+        apply: (s) => {
+          const newMult = (s.permaGlobalMult ?? 1) * 1.1;
+          return {
+            ...s,
+            cash: Math.max(0, s.cash - 60000),
+            permaGlobalMult: newMult,
+          };
+        },
+        meta: { info: "Avantage compétitif majeur." },
+      },
+      {
+        label: "Trop cher",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "reputation_crisis",
+    title: "Crise de réputation",
+    desc: "Un scandale menace de détruire votre réputation publique.",
+    choices: [
+      {
+        label: "Gérer la crise (-$50k, -20👑)",
+        apply: (s) => ({
+          ...s,
+          cash: Math.max(0, s.cash - 50000),
+          respect: Math.max(0, s.respect - 20),
+        }),
+        meta: { info: "Limiter les dégâts est parfois un succès." },
+      },
+      {
+        label: "Nier et contre-attaquer (+15🔥, -30👑)",
+        apply: (s) => ({
+          ...s,
+          heat: Math.min(100, s.heat + 15),
+          respect: Math.max(0, s.respect - 30),
+        }),
+        meta: { info: "La violence ne règle pas tout." },
+      },
+    ],
+  },
+  {
+    id: "expansion_opportunity",
+    title: "Opportunité d'expansion",
+    desc: "Une région voisine est prête à être conquise. Une excellente occasion de croissance.",
+    choices: [
+      {
+        label: "Conquérir la région (-$150k, +5% revenus/h)",
+        apply: (s) => {
+          const newMult = (s.permaGlobalMult ?? 1) * 1.05;
+          return {
+            ...s,
+            cash: Math.max(0, s.cash - 150000),
+            permaGlobalMult: newMult,
+            heat: Math.min(100, s.heat + 20),
+            tension: Math.min(100, (s.tension ?? 0) + 15),
+          };
+        },
+        meta: { info: "Expansion = Risque mais croissance garantie." },
+      },
+      {
+        label: "Rester à la maison",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "informant_bust",
+    title: "Taupe identifiée",
+    desc: "Vous découvrez qu'un de vos informateurs travaille pour la police.",
+    choices: [
+      {
+        label: "L'éliminer (+15👑, +10🔥)",
+        apply: (s) => ({
+          ...s,
+          respect: s.respect + 15,
+          heat: Math.min(100, s.heat + 10),
+        }),
+        meta: { info: "Message clair : la trahison se paie." },
+      },
+      {
+        label: "L'utiliser comme agent double (-10🔥, +8👑)",
+        apply: (s) => ({
+          ...s,
+          heat: Math.max(0, s.heat - 10),
+          respect: s.respect + 8,
+        }),
+        meta: { info: "Retourner la situation en votre faveur." },
+      },
+    ],
+  },
+  {
+    id: "legal_diversification",
+    title: "Diversification légale",
+    desc: "Investir dans des entreprises légales offre un couvert parfait pour vos opérations.",
+    choices: [
+      {
+        label: "Investir dans les ressources (-$120k, +8% revenus/h)",
+        apply: (s) => {
+          const newMult = (s.permaGlobalMult ?? 1) * 1.08;
+          return {
+            ...s,
+            cash: Math.max(0, s.cash - 120000),
+            permaGlobalMult: newMult,
+            heat: Math.max(0, s.heat - 8),
+          };
+        },
+        meta: { info: "Blanchiment + légitimité = parfait." },
+      },
+      {
+        label: "Rester 100% criminel",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "ghost_town_control",
+    title: "Contrôle d'une ville fantôme",
+    desc: "Une petite ville isolée propose de vous reconnaître comme leader officieux.",
+    choices: [
+      {
+        label: "Prendre le contrôle (-$80k, +3% revenus/h permanent)",
+        apply: (s) => {
+          const newMult = (s.permaGlobalMult ?? 1) * 1.03;
+          return {
+            ...s,
+            cash: Math.max(0, s.cash - 80000),
+            permaGlobalMult: newMult,
+            respect: s.respect + 25,
+          };
+        },
+        meta: { info: "Un fief personnel en arrière-pays." },
+      },
+      {
+        label: "Trop compliqué",
+        apply: (s) => s,
+      },
+    ],
+  },
+  // ===== JUSTICE & LÉGALITÉ =====
+  {
+    id: "trial_outcome",
+    title: "Verdict du procès",
+    desc: "Vous êtes jugé pour des accusations graves. Les dés sont jetés.",
+    choices: [
+      {
+        label: "Acquittal (+30👑, -20🔥, +$50k)",
+        apply: (s) => ({
+          ...s,
+          respect: s.respect + 30,
+          heat: Math.max(0, s.heat - 20),
+          cash: s.cash + 50000,
+        }),
+        meta: { info: "Justice corrompue à votre faveur." },
+      },
+      {
+        label: "Condamnation réduite (-10👑, +10🔥)",
+        apply: (s) => ({
+          ...s,
+          respect: Math.max(0, s.respect - 10),
+          heat: Math.min(100, s.heat + 10),
+        }),
+        meta: { info: "Pas idéal, mais ça aurait pu être pire." },
+      },
+    ],
+  },
+  {
+    id: "prison_break",
+    title: "Évasion de prison",
+    desc: "Un de vos hommes importants est emprisonné. Vous pouvez organiser son évasion.",
+    choices: [
+      {
+        label: "Organiser l'évasion (-$80k, +20👑, +20🔥)",
+        apply: (s) => {
+          const win = Math.random() < 0.6;
+          return {
+            ...s,
+            cash: Math.max(0, s.cash - 80000),
+            respect: s.respect + (win ? 20 : -15),
+            heat: Math.min(100, s.heat + (win ? 20 : 35)),
+          };
+        },
+        meta: { successChance: 0.6, info: "Succès: +20👑, Échec: -15👑 +35🔥" },
+      },
+      {
+        label: "Attendre sa libération (-15👑)",
+        apply: (s) => ({
+          ...s,
+          respect: Math.max(0, s.respect - 15),
+        }),
+        meta: { info: "L'abandon affaiblit la famille." },
+      },
+    ],
+  },
+  {
+    id: "witness_flip",
+    title: "Témoin qui se retourne",
+    desc: "Un témoin clé change son témoignage contre vous pour le fédéral.",
+    choices: [
+      {
+        label: "Le retrouver (-$40k, +15👑, +15🔥)",
+        apply: (s) => ({
+          ...s,
+          cash: Math.max(0, s.cash - 40000),
+          respect: s.respect + 15,
+          heat: Math.min(100, s.heat + 15),
+        }),
+        meta: { info: "Justice criminelle rapide." },
+      },
+      {
+        label: "Plaider coupable (-30👑, -15🔥)",
+        apply: (s) => ({
+          ...s,
+          respect: Math.max(0, s.respect - 30),
+          heat: Math.max(0, s.heat - 15),
+        }),
+        meta: { info: "Sacrifice et rédemption." },
+      },
+    ],
+  },
+  {
+    id: "corrupt_judge",
+    title: "Judge corrompu",
+    desc: "Un juge offre de modifier les sentences... pour un prix.",
+    choices: [
+      {
+        label: "Payer pour les faveurs (-$60k, -15🔥 permanent)",
+        apply: (s) => ({
+          ...s,
+          cash: Math.max(0, s.cash - 60000),
+          heat: Math.max(0, s.heat - 15),
+          respect: s.respect + 10,
+        }),
+        meta: { info: "Justice pliée à votre volonté." },
+      },
+      {
+        label: "Refuser",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "legal_appeal",
+    title: "Appel en cour suprême",
+    desc: "Une dernière chance: un appel auprès de la cour suprême pour casser une condamnation.",
+    choices: [
+      {
+        label: "Déposer l'appel (-$100k, +25👑)",
+        apply: (s) => {
+          const win = Math.random() < 0.45;
+          return {
+            ...s,
+            cash: Math.max(0, s.cash - 100000),
+            respect: s.respect + (win ? 25 : -10),
+            heat: Math.max(0, s.heat - (win ? 25 : 0)),
+          };
+        },
+        meta: { successChance: 0.45, info: "L'ultime recours judiciaire." },
+      },
+      {
+        label: "Accepter la sentence",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "pardon_opportunity",
+    title: "Opportunité de grâce présidentielle",
+    desc: "Un contact au gouvernement offre une grâce présidentielle... à un prix très élevé.",
+    choices: [
+      {
+        label: "Acheter la grâce (-$200k, +40👑, -40🔥)",
+        apply: (s) => ({
+          ...s,
+          cash: Math.max(0, s.cash - 200000),
+          respect: s.respect + 40,
+          heat: Math.max(0, s.heat - 40),
+        }),
+        meta: { info: "La justice suprême s'achète au plus haut prix." },
+      },
+      {
+        label: "Trop cher",
+        apply: (s) => s,
+      },
+    ],
+  },
+  // ===== SANTÉ & ACCIDENTS =====
+  {
+    id: "assassination_attempt",
+    title: "Tentative d'assassinat",
+    desc: "Un ennemi a commandité un tueur à gages pour vous éliminer.",
+    choices: [
+      {
+        label: "Survivre et contre-attaquer (+25👑, +20🔥)",
+        apply: (s) => ({
+          ...s,
+          respect: s.respect + 25,
+          heat: Math.min(100, s.heat + 20),
+        }),
+        meta: { info: "L'adversité forge les vrais chefs." },
+      },
+      {
+        label: "Se cacher temporairement (-10👑, -10🔥)",
+        apply: (s) => ({
+          ...s,
+          respect: Math.max(0, s.respect - 10),
+          heat: Math.max(0, s.heat - 10),
+        }),
+        meta: { info: "Prudence avant tout." },
+      },
+    ],
+  },
+  {
+    id: "food_poisoning",
+    title: "Empoisonnement alimentaire",
+    desc: "Un rival tente d'empoisonner votre nourriture lors d'un événement public.",
+    choices: [
+      {
+        label: "Inverser le poison (+20👑, +15🔥, -$30k)",
+        apply: (s) => ({
+          ...s,
+          respect: s.respect + 20,
+          heat: Math.min(100, s.heat + 15),
+          cash: Math.max(0, s.cash - 30000),
+        }),
+        meta: { info: "Le comploteur devient la victime." },
+      },
+      {
+        label: "Ignorer le danger",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "hospital_bribe",
+    title: "Corruption à l'hôpital",
+    desc: "Un cadre médical veut vous vendre des registres de patients VIP pour du chantage.",
+    choices: [
+      {
+        label: "Acheter les dossiers (-$50k, +15👑, +10🔥)",
+        apply: (s) => ({
+          ...s,
+          cash: Math.max(0, s.cash - 50000),
+          respect: s.respect + 15,
+          heat: Math.min(100, s.heat + 10),
+        }),
+        meta: { info: "Chantage médical lucratif." },
+      },
+      {
+        label: "Passer",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "doctor_disappearance",
+    title: "Disparition d'un médecin",
+    desc: "Le seul docteur capable de tracer vos crimes disparaît mystérieusement.",
+    choices: [
+      {
+        label: "Organiser la disparition (+20👑, +5🔥)",
+        apply: (s) => ({
+          ...s,
+          respect: s.respect + 20,
+          heat: Math.min(100, s.heat + 5),
+        }),
+        meta: { info: "Pas de preuves = pas de crime." },
+      },
+      {
+        label: "Le laisser en paix (-5👑)",
+        apply: (s) => ({
+          ...s,
+          respect: Math.max(0, s.respect - 5),
+        }),
+        meta: { info: "Montrer de la compassion." },
+      },
+    ],
+  },
+  {
+    id: "epidemic_opportunity",
+    title: "Opportunité épidémique",
+    desc: "Une épidémie paralyse la ville. Les opportunités criminelles explosent.",
+    choices: [
+      {
+        label: "Profiter du chaos (+$120k, +12🔥, +3% revenus)",
+        apply: (s) => {
+          const newMult = (s.permaGlobalMult ?? 1) * 1.03;
+          return {
+            ...s,
+            cash: s.cash + 120000,
+            heat: Math.min(100, s.heat + 12),
+            permaGlobalMult: newMult,
+          };
+        },
+        meta: { info: "Le malheur est un bonheur pour certains." },
+      },
+      {
+        label: "Aider les victimes (-$40k, +10👑, -5🔥)",
+        apply: (s) => ({
+          ...s,
+          cash: Math.max(0, s.cash - 40000),
+          respect: s.respect + 10,
+          heat: Math.max(0, s.heat - 5),
+        }),
+        meta: { info: "Humanité en temps de crise." },
+      },
+    ],
+  },
+  {
+    id: "organ_trafficking",
+    title: "Trafic d'organes",
+    desc: "Un réseau de trafiquants d'organes propose de vous faire entrer dans le business.",
+    choices: [
+      {
+        label: "Rejoindre le réseau (+$150k, +25👑, +25🔥)",
+        apply: (s) => ({
+          ...s,
+          cash: s.cash + 150000,
+          respect: s.respect + 25,
+          heat: Math.min(100, s.heat + 25),
+        }),
+        meta: { info: "L'ultime déprédation humaine." },
+      },
+      {
+        label: "Dénoncer le réseau (-$20k, -10👑, -20🔥)",
+        apply: (s) => ({
+          ...s,
+          cash: Math.max(0, s.cash - 20000),
+          respect: Math.max(0, s.respect - 10),
+          heat: Math.max(0, s.heat - 20),
+        }),
+        meta: { info: "Même les criminels ont des limites." },
+      },
+    ],
+  },
+  // ===== FINANCE AVANCÉE =====
+  {
+    id: "stock_manipulation",
+    title: "Manipulation d'actions",
+    desc: "Des brokers véreux vous proposent de manipuler le marché boursier.",
+    choices: [
+      {
+        label: "Manipuler les stocks (+$200k, +8% revenus, +10🔥)",
+        apply: (s) => {
+          const newMult = (s.permaGlobalMult ?? 1) * 1.08;
+          return {
+            ...s,
+            cash: s.cash + 200000,
+            permaGlobalMult: newMult,
+            heat: Math.min(100, s.heat + 10),
+          };
+        },
+        meta: { info: "Fraude financière à grande échelle." },
+      },
+      {
+        label: "Rester légal",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "cryptocurrency_heist",
+    title: "Vol de crypto-monnaies",
+    desc: "Des hackers proposent de voler des portefeuilles crypto d'oligarques.",
+    choices: [
+      {
+        label: "Financer le vol (-$100k, +$300k, +8🔥)",
+        apply: (s) => ({
+          ...s,
+          cash: s.cash - 100000 + 300000,
+          heat: Math.min(100, s.heat + 8),
+        }),
+        meta: { info: "Richesses numériques, traces numériques." },
+      },
+      {
+        label: "Trop technologique",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "money_transfer_block",
+    title: "Blocage de transfert",
+    desc: "Vos transferts bancaires sont bloqués par les autorités. Il faut payer pour débloquer.",
+    choices: [
+      {
+        label: "Payer pour débloquer (-$50k)",
+        apply: (s) => ({
+          ...s,
+          cash: Math.max(0, s.cash - 50000),
+          heat: Math.max(0, s.heat - 10),
+        }),
+        meta: { info: "L'argent résout les blocages." },
+      },
+      {
+        label: "Contourner le système (-$30k, +15🔥)",
+        apply: (s) => ({
+          ...s,
+          cash: Math.max(0, s.cash - 30000),
+          heat: Math.min(100, s.heat + 15),
+        }),
+        meta: { info: "Routes illégales plus efficaces." },
+      },
+    ],
+  },
+  {
+    id: "bank_collapse",
+    title: "Effondrement bancaire",
+    desc: "Une banque où vous aviez des fonds s'effondre. Vous pouvez profiter du chaos.",
+    choices: [
+      {
+        label: "Piller les restes (+$250k, +15🔥)",
+        apply: (s) => ({
+          ...s,
+          cash: s.cash + 250000,
+          heat: Math.min(100, s.heat + 15),
+        }),
+        meta: { info: "La fin justifie les moyens." },
+      },
+      {
+        label: "Réclamer votre dû (+$100k)",
+        apply: (s) => ({
+          ...s,
+          cash: s.cash + 100000,
+        }),
+        meta: { info: "Voie légale mais moins lucrative." },
+      },
+    ],
+  },
+  {
+    id: "investment_dividend",
+    title: "Dividende d'investissement",
+    desc: "Vos investissements légaux génèrent un dividende substantiel.",
+    choices: [
+      {
+        label: "Réinvestir (+$150k, +6% revenus)",
+        apply: (s) => {
+          const newMult = (s.permaGlobalMult ?? 1) * 1.06;
+          return {
+            ...s,
+            cash: s.cash + 150000,
+            permaGlobalMult: newMult,
+          };
+        },
+        meta: { info: "L'argent engendre l'argent." },
+      },
+      {
+        label: "Prendre les profits (+$150k)",
+        apply: (s) => ({
+          ...s,
+          cash: s.cash + 150000,
+        }),
+        meta: { info: "Jouir des fruits du travail." },
+      },
+    ],
+  },
+  {
+    id: "pension_fund_theft",
+    title: "Vol de fonds de pension",
+    desc: "Des comptables véreux proposent de détourner les fonds de pension d'une grande entreprise.",
+    choices: [
+      {
+        label: "Planifier le vol (-$75k, +$300k, +20🔥)",
+        apply: (s) => {
+          const win = Math.random() < 0.5;
+          return {
+            ...s,
+            cash: s.cash - 75000 + (win ? 300000 : -100000),
+            heat: Math.min(100, s.heat + (win ? 20 : 40)),
+          };
+        },
+        meta: { successChance: 0.5, info: "Gros coup ou grosse faillite." },
+      },
+      {
+        label: "Refuser",
+        apply: (s) => s,
+      },
+    ],
+  },
+  // ===== MÉDIAS & RÉPUTATION =====
+  {
+    id: "viral_moment",
+    title: "Moment viral",
+    desc: "Une vidéo de vos exploits devient virale sur les réseaux. Bonne ou mauvaise pub?",
+    choices: [
+      {
+        label: "Exploiter le buzz (+$80k, +20👑, +10🔥)",
+        apply: (s) => ({
+          ...s,
+          cash: s.cash + 80000,
+          respect: s.respect + 20,
+          heat: Math.min(100, s.heat + 10),
+        }),
+        meta: { info: "La notoriété a un prix." },
+      },
+      {
+        label: "Faire taire la vidéo (-$40k, -5🔥)",
+        apply: (s) => ({
+          ...s,
+          cash: Math.max(0, s.cash - 40000),
+          heat: Math.max(0, s.heat - 5),
+        }),
+        meta: { info: "Contrôle des dégâts." },
+      },
+    ],
+  },
+  {
+    id: "influencer_collab",
+    title: "Collaboration avec influenceur",
+    desc: "Un influenceur propose de promouvoir vos 'entreprises' contre rémunération.",
+    choices: [
+      {
+        label: "Sponsoriser (-$30k, +$60k, +10👑)",
+        apply: (s) => ({
+          ...s,
+          cash: s.cash - 30000 + 60000,
+          respect: s.respect + 10,
+        }),
+        meta: { info: "Marketing criminel du 21e siècle." },
+      },
+      {
+        label: "Passer",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "documentary_pressure",
+    title: "Pression documentaire",
+    desc: "Un réalisateur documentaire veut vous filmer pour son enquête sur la mafia.",
+    choices: [
+      {
+        label: "Le laisser filmer (+15👑, +20🔥)",
+        apply: (s) => ({
+          ...s,
+          respect: s.respect + 15,
+          heat: Math.min(100, s.heat + 20),
+        }),
+        meta: { info: "Contrôle du narratif criminel." },
+      },
+      {
+        label: "Intercepter le documentaire (-$50k, -10🔥)",
+        apply: (s) => ({
+          ...s,
+          cash: Math.max(0, s.cash - 50000),
+          heat: Math.max(0, s.heat - 10),
+        }),
+        meta: { info: "Silence payant." },
+      },
+    ],
+  },
+  {
+    id: "fake_news_spread",
+    title: "Propagation de fausses nouvelles",
+    desc: "Vous pouvez utiliser les médias sociaux pour répandre des rumeurs contre vos rivaux.",
+    choices: [
+      {
+        label: "Lancer la campagne (+$40k, +15👑, +5🔥)",
+        apply: (s) => ({
+          ...s,
+          cash: s.cash + 40000,
+          respect: s.respect + 15,
+          heat: Math.min(100, s.heat + 5),
+        }),
+        meta: { info: "Information warfare criminel." },
+      },
+      {
+        label: "Rester honnête",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "paparazzi_blackmail",
+    title: "Chantage aux paparazzi",
+    desc: "Des photographes clandestins ont capturé des moments compromettants de politiciens.",
+    choices: [
+      {
+        label: "Acheter les photos (-$40k, +$100k)",
+        apply: (s) => ({
+          ...s,
+          cash: s.cash - 40000 + 100000,
+        }),
+        meta: { info: "Secrets valent de l'or." },
+      },
+      {
+        label: "Laisser les photos libres",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "award_ceremony",
+    title: "Cérémonie de remise de prix",
+    desc: "Une cérémonie de prix récompense les 'entrepreneurs les plus influents'. Vous êtes nominé.",
+    choices: [
+      {
+        label: "Remporter le prix (-$30k, +25👑, -5🔥)",
+        apply: (s) => ({
+          ...s,
+          cash: Math.max(0, s.cash - 30000),
+          respect: s.respect + 25,
+          heat: Math.max(0, s.heat - 5),
+        }),
+        meta: { info: "La légitimité façade." },
+      },
+      {
+        label: "Ignorer la nomination",
+        apply: (s) => s,
+      },
+    ],
+  },
+  // ===== RELATIONS FAMILIALES =====
+  {
+    id: "family_summit",
+    title: "Sommet familial",
+    desc: "Les chefs de famille se réunissent pour discuter de la paix et des territoires.",
+    choices: [
+      {
+        label: "Négocier une alliance (-$50k, +20👑, -10⚡)",
+        apply: (s) => ({
+          ...s,
+          cash: Math.max(0, s.cash - 50000),
+          respect: s.respect + 20,
+          tension: Math.max(0, (s.tension ?? 0) - 10),
+        }),
+        meta: { info: "Diplomatie mafiosa." },
+      },
+      {
+        label: "Montrer la force (+15👑, +20⚡)",
+        apply: (s) => ({
+          ...s,
+          respect: s.respect + 15,
+          tension: Math.min(100, (s.tension ?? 0) + 20),
+        }),
+        meta: { info: "Domination par la menace." },
+      },
+    ],
+  },
+  {
+    id: "succession_crisis",
+    title: "Crise de succession",
+    desc: "Le parrain vieillit. Qui le remplacera? La question divise la famille.",
+    choices: [
+      {
+        label: "Offrir votre candidature (+30👑, +25⚡)",
+        apply: (s) => ({
+          ...s,
+          respect: s.respect + 30,
+          tension: Math.min(100, (s.tension ?? 0) + 25),
+        }),
+        meta: { info: "Ambition = conflits." },
+      },
+      {
+        label: "Rester loyal au parrain (-10👑, -15⚡)",
+        apply: (s) => ({
+          ...s,
+          respect: Math.max(0, s.respect - 10),
+          tension: Math.max(0, (s.tension ?? 0) - 15),
+        }),
+        meta: { info: "La loyauté apaise les esprits." },
+      },
+    ],
+  },
+  {
+    id: "godson_recruitment",
+    title: "Recrutement du filleul",
+    desc: "Le filleul d'un allié puissant veut rejoindre votre famille.",
+    choices: [
+      {
+        label: "Le recruter (-$20k, +20👑, +10👑 futur)",
+        apply: (s) => ({
+          ...s,
+          cash: Math.max(0, s.cash - 20000),
+          respect: s.respect + 20,
+        }),
+        meta: { info: "Un lien précieux avec une autre famille." },
+      },
+      {
+        label: "Le refuser (+5👑 imédiat)",
+        apply: (s) => ({
+          ...s,
+          respect: s.respect + 5,
+        }),
+        meta: { info: "Indépendance de pensée." },
+      },
+    ],
+  },
+  {
+    id: "elder_wisdom",
+    title: "Sagesse des anciens",
+    desc: "Un ancêtre vénéré offre des conseils stratégiques précieux basés sur son expérience.",
+    choices: [
+      {
+        label: "Écouter (-$10k pour cadeau, +4% revenus)",
+        apply: (s) => {
+          const newMult = (s.permaGlobalMult ?? 1) * 1.04;
+          return {
+            ...s,
+            cash: Math.max(0, s.cash - 10000),
+            permaGlobalMult: newMult,
+            respect: s.respect + 10,
+          };
+        },
+        meta: { info: "Sagesse vaut de l'or." },
+      },
+      {
+        label: "Ignorer ses conseils",
+        apply: (s) => s,
+      },
+    ],
+  },
+  {
+    id: "family_business_split",
+    title: "Scission du business familial",
+    desc: "Des divergences idéologiques menacent de diviser les opérations familiales.",
+    choices: [
+      {
+        label: "Chercher la réconciliation (-$30k, -15⚡)",
+        apply: (s) => ({
+          ...s,
+          cash: Math.max(0, s.cash - 30000),
+          tension: Math.max(0, (s.tension ?? 0) - 15),
+        }),
+        meta: { info: "L'unité est la force." },
+      },
+      {
+        label: "Accepter la scission (+15👑, +20⚡)",
+        apply: (s) => ({
+          ...s,
+          respect: s.respect + 15,
+          tension: Math.min(100, (s.tension ?? 0) + 20),
+        }),
+        meta: { info: "Parfois la séparation est inévitable." },
+      },
+    ],
+  },
+  {
+    id: "legacy_inheritance",
+    title: "Héritage dynastique",
+    desc: "Un ancien boss décédé vous lègue une part importante de sa fortune et son influence.",
+    choices: [
+      {
+        label: "Accepter l'héritage (+$300k, +50👑, +7% revenus)",
+        apply: (s) => {
+          const newMult = (s.permaGlobalMult ?? 1) * 1.07;
+          return {
+            ...s,
+            cash: s.cash + 300000,
+            respect: s.respect + 50,
+            permaGlobalMult: newMult,
+          };
+        },
+        meta: { info: "Un héritage qui change la destinée." },
+      },
+      {
+        label: "Refuser par principe (+10👑, -$50k)",
+        apply: (s) => ({
+          ...s,
+          respect: s.respect + 10,
+          cash: Math.max(0, s.cash - 50000),
+        }),
+        meta: { info: "L'intégrité a un prix." },
       },
     ],
   },

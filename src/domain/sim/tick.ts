@@ -1,5 +1,10 @@
 import type { SaveState } from "../types";
-import { clamp, TIME_XP_RATE, XP_PER_CASH_PER_SEC } from "../balance";
+import {
+  clamp,
+  TIME_XP_RATE,
+  XP_PER_CASH_PER_SEC,
+  TENSION_DECAY_PER_SECOND,
+} from "../balance";
 import { computeTick, computeProduction, xpForLevel } from "../economy";
 
 /**
@@ -16,6 +21,11 @@ export function applyTick(state: SaveState, dt: number): SaveState {
     respect: state.respect + respectDelta,
     heat: clamp(state.heat + heatDelta, 0, 100),
   };
+
+  // Apply tension passive decay (15% per second)
+  const currentTension = state.tension || 0;
+  const decayAmount = currentTension * TENSION_DECAY_PER_SECOND * clampedDt;
+  next.tension = clamp(currentTension - decayAmount, 0, 100);
 
   // XP depuis le temps + revenus
   const xpFromTime = TIME_XP_RATE * clampedDt;

@@ -50,6 +50,7 @@ export function createDefaultSave(): SaveState {
     lastJournalSeenTs: Date.now(),
     tutorialEventJournalOpened: false,
     families: typeof defaultFamilies === "function" ? defaultFamilies() : [],
+    missionsProgress: {},
     lastSave: Date.now(),
     tempGlobalBuffUntil: undefined,
     // ajoute ici d'éventuels nouveaux champs avec leurs défauts
@@ -89,6 +90,7 @@ function withDefaults(raw: Partial<SaveState> | undefined): SaveState {
     inventory: from.inventory ?? base.inventory,
     equipped: from.equipped ?? base.equipped,
     families: from.families ?? base.families,
+    missionsProgress: from.missionsProgress ?? base.missionsProgress,
     lastSave: from.lastSave ?? base.lastSave,
     tempGlobalBuffUntil: from.tempGlobalBuffUntil ?? base.tempGlobalBuffUntil,
     eventLog: from.eventLog ?? base.eventLog,
@@ -124,6 +126,7 @@ function migrateSaveState(input: Partial<SaveState> | undefined): SaveState {
     if (typeof s.tutorialEventJournalOpened !== "boolean") {
       s.tutorialEventJournalOpened = false;
     }
+    if (!s.missionsProgress) s.missionsProgress = {};
     // clamp chaleur
     if (typeof s.heat === "number") {
       s.heat = Math.min(100, Math.max(0, s.heat));

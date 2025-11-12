@@ -47,11 +47,13 @@ import { StaffTooltip } from "./components/StaffTooltip";
 import { MainMenu } from "./components/MainMenu";
 import { UpgradesModal } from "./components/UpgradesModal";
 import { InfluenceModal } from "./components/InfluenceModal";
+import { MissionsPanel } from "./components/MissionsPanel";
 import TutorialOverlay from "./components/TutorialOverlay";
 import { TUTORIAL_STEPS } from "./domain/tutorial";
 import { useAudioEngine } from "./hooks/useAudioEngine";
 import { useGameLoop } from "./hooks/useGameLoop";
 import { usePlayerActions } from "./hooks/usePlayerActions";
+import { useToast } from "./context/ToastContext";
 import { EventJournal } from "./components/EventJournal";
 import { appendEvent, clearEventLog } from "./domain/journal";
 import type { EventLogEntry } from "./domain/types";
@@ -67,13 +69,21 @@ import {
   computeProduction,
   xpForLevel,
 } from "./domain/economy";
+import { formatNumberUI } from "./domain/format";
 import { applyTick } from "./domain/sim/tick";
+import {
+  updateMissionsProgress,
+  applyMissionRewards,
+  getNewlyCompletedMissions,
+  getMissionCompletionMessage,
+  initializeMissions,
+} from "./domain/missions";
 import {
   selectProduction,
   selectRevenuePerSecForKey,
   selectGenSorted,
 } from "./store/selectors";
-import { EVENTS, pickRarity } from "./domain/events";
+import { EVENTS, eventPreconditions, pickRarity } from "./domain/events";
 import { applyInvestment } from "./domain/investments";
 import { useGameStore, createInitialFromSave } from "./store/root";
 import { prestigeGain } from "./domain/prestige";
@@ -101,21 +111,12 @@ type WarResolve = {
   narrative: string[];
 };
 
-const formatNumber = (n: number) => {
-  if (!isFinite(n)) return "∞";
-  const abs = Math.abs(n);
-  if (abs >= 1e12) return (n / 1e12).toFixed(2) + " T";
-  if (abs >= 1e9) return (n / 1e9).toFixed(2) + " B";
-  if (abs >= 1e6) return (n / 1e6).toFixed(2) + " M";
-  if (abs >= 1e3) return (n / 1e3).toFixed(2) + " k";
-  return n.toFixed(2);
-};
-
 // ----------------------------
 // Composant principal
 // ----------------------------
 export default function MafiaIdleRedesign() {
   const audio = useAudioEngine();
+  const toast = useToast();
   // Store selectors (HUD wiring)
 
   const [muted, setMuted] = useState(false);
@@ -136,6 +137,7 @@ export default function MafiaIdleRedesign() {
   const [showWarehouse, setShowWarehouse] = useState(false);
   const [showIntel, setShowIntel] = useState(false);
   const [showInvestments, setShowInvestments] = useState(false);
+  const [showMissions, setShowMissions] = useState(false);
   const [activeTab, setActiveTab] = useState<"ops" | "family">("ops");
   const [warFor, setWarFor] = useState<null | { id: string }>(null);
   const [warReport, setWarReport] = useState<null | {
@@ -176,7 +178,11 @@ export default function MafiaIdleRedesign() {
   });
 
   const [state, setState] = useState<SaveState>(() => {
-    const s = loadSave();
+    let s = loadSave();
+
+    // Initialize missions if not already initialized
+    s = initializeMissions(s);
+
     // Apply offline progression since last save to preserve progress when returning
     const now = Date.now();
     const elapsedSecRaw = (now - (s.lastSave || now)) / 1000;
@@ -250,9 +256,43 @@ export default function MafiaIdleRedesign() {
   ]);
 
   const stateRef = useRef(state);
+  const prevStateRef = useRef<SaveState | null>(null);
   const lastAutoSaveMs = useRef<number>(Date.now());
+
   useEffect(() => {
     stateRef.current = state;
+  }, [state]);
+
+  // Track mission completions and show notifications
+  useEffect(() => {
+    // Only check for completed missions if prevStateRef is initialized
+    if (prevStateRef.current !== null) {
+      const completedMissions = getNewlyCompletedMissions(
+        prevStateRef.current,
+        state
+      );
+
+      completedMissions.forEach((mission) => {
+        const message = getMissionCompletionMessage(mission);
+        console.log("🎉 MISSION COMPLÉTÉE:", {
+          title: message.title,
+          description: message.description,
+          rewards: message.rewards,
+        });
+
+        // Show toast notification with mission rewards
+        toast.addToast({
+          type: "success",
+          message: message.title,
+          icon: "🎉",
+          rewards: message.rewards,
+          duration: 6000, // Show for 6 seconds
+        });
+      });
+    }
+
+    prevStateRef.current = state;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
   useEffect(() => {
@@ -311,7 +351,13 @@ export default function MafiaIdleRedesign() {
       clampedDt,
       playerCashPerSec
     );
-    const next: SaveState = { ...s1, families: familiesNext };
+    const s2 = { ...s1, families: familiesNext };
+
+    // 1.5) Mise à jour de la progression des missions
+    const s3 = updateMissionsProgress(s2);
+
+    // 1.6) Application des récompenses des missions complétées
+    const next = applyMissionRewards(s3);
 
     // 2) Commit du nouvel état
     setState(next);
@@ -354,38 +400,60 @@ export default function MafiaIdleRedesign() {
   // Random events scheduler
   useEffect(() => {
     let timer: number | null = null;
-    if (!currentEvent) {
+    if (currentEvent) {
+      return;
+    }
+
+    const schedule = () => {
       const delay = 120000 + Math.random() * 120000; // 120-240s
       timer = window.setTimeout(() => {
-        const availableEvents = EVENTS.filter(
-          (e) => !recentEvents.includes(e.id)
-        );
+        const s = stateRef.current; // Use the most recent state
+        const hasOtherFamilies = s.families && s.families.length > 1;
+
+        const availableEvents = EVENTS.filter((e) => {
+          // 1. Filter out recent events
+          if (recentEvents.includes(e.id)) return false;
+
+          // 2. Filter out family events if no other families exist
+          if (e.id.startsWith("family_") && !hasOtherFamilies) return false;
+
+          // 3. Filter based on preconditions
+          const precondition = eventPreconditions[e.id];
+          if (precondition && !precondition(s)) return false;
+
+          return true;
+        });
+
         if (availableEvents.length > 0) {
           let event =
             availableEvents[Math.floor(Math.random() * availableEvents.length)];
 
-          // Handle dynamic family events
-          if (event.id.startsWith("family_")) {
-            const otherFamilies = state.families.slice(1);
-            if (otherFamilies.length > 0) {
-              const family =
-                otherFamilies[Math.floor(Math.random() * otherFamilies.length)];
-              event = {
-                ...event,
-                title: event.title.replace("{familyName}", family.name),
-                desc: event.desc.replace("{familyName}", family.name),
-                familyId: family.id, // Pass familyId for actions
-              };
-            }
+          // If it's a family event, inject the family's name
+          if (event.id.startsWith("family_") && hasOtherFamilies) {
+            const otherFamilies = s.families.slice(1);
+            const family =
+              otherFamilies[Math.floor(Math.random() * otherFamilies.length)];
+            event = {
+              ...event,
+              title: event.title.replace("{familyName}", family.name),
+              desc: event.desc.replace("{familyName}", family.name),
+              familyId: family.id,
+            };
           }
           setCurrentEvent(event);
+        } else {
+          // No events available, try again later
+          schedule();
         }
       }, delay) as unknown as number;
-    }
+    };
+
+    schedule();
+
     return () => {
       if (timer) window.clearTimeout(timer);
     };
-  }, [currentEvent, recentEvents, state.families]);
+  }, [currentEvent, recentEvents]);
 
   const journalTooltipContent = useMemo(() => {
     const log = (state.eventLog ?? [])
@@ -482,14 +550,14 @@ export default function MafiaIdleRedesign() {
                   {g.icon} {g.name}
                 </span>
                 <span className="text-yellow-400">
-                  $ {formatNumber(revenue)}
+                  $ {formatNumberUI(revenue)}
                 </span>
               </li>
             ))}
             <li className="flex justify-between gap-3 pt-1 border-t border-yellow-600/30 mt-1">
               <span className="font-semibold">Total</span>
               <span className="text-yellow-400 font-semibold">
-                $ {formatNumber(total)}
+                $ {formatNumberUI(total)}
               </span>
             </li>
           </ul>
@@ -511,16 +579,16 @@ export default function MafiaIdleRedesign() {
         </div>
         <div className="text-xs grid grid-cols-2 gap-x-3 gap-y-1">
           <span className="text-zinc-300">Revenue utilisé</span>
-          <span className="text-right">$ {formatNumber(cashPerSec)}</span>
+          <span className="text-right">$ {formatNumberUI(cashPerSec)}</span>
           <span className="text-zinc-300">Base</span>
-          <span className="text-right">{formatNumber(base)}</span>
+          <span className="text-right">{formatNumberUI(base)}</span>
           <span className="text-zinc-300">Pénalité chaleur</span>
           <span className="text-right">-{(heatPenalty * 100).toFixed(0)}%</span>
           <span className="text-zinc-300">Facteur final</span>
           <span className="text-right">x{factor.toFixed(2)}</span>
           <span className="font-semibold">Respect/s</span>
           <span className="text-right text-yellow-400 font-semibold">
-            {formatNumber(final)}
+            {formatNumberUI(final)}
           </span>
         </div>
       </div>
@@ -555,17 +623,19 @@ export default function MafiaIdleRedesign() {
                 <span className="truncate">
                   {g.icon} {g.name}
                 </span>
-                <span className="text-red-300">+{formatNumber(val)}</span>
+                <span className="text-red-300">+{formatNumberUI(val)}</span>
               </li>
             ))}
             <li className="flex justify-between gap-3">
               <span className="text-zinc-300">Refroidissement de base</span>
-              <span className="text-emerald-400">-{formatNumber(cooling)}</span>
+              <span className="text-emerald-400">
+                -{formatNumberUI(cooling)}
+              </span>
             </li>
             <li className="flex justify-between gap-3">
               <span className="text-zinc-300">Mitigation politique</span>
               <span className="text-emerald-400">
-                -{formatNumber(mitigation)}
+                -{formatNumberUI(mitigation)}
               </span>
             </li>
             <li className="flex justify-between gap-3 pt-1 border-t border-yellow-600/30 mt-1">
@@ -576,7 +646,7 @@ export default function MafiaIdleRedesign() {
                 }`}
               >
                 {net >= 0 ? "+" : ""}
-                {formatNumber(net)}
+                {formatNumberUI(net)}
               </span>
             </li>
           </ul>
@@ -905,7 +975,15 @@ export default function MafiaIdleRedesign() {
         <EventModal
           event={currentEvent}
           onClose={() => setCurrentEvent(null)}
-          onApply={(apply) => {
+          onApply={(apply, choiceLabel) => {
+            if (currentEvent.familyId) {
+              if (choiceLabel === "Refuser et déclarer la guerre") {
+                declareWar(currentEvent.familyId);
+              } else if (choiceLabel === "Accepter la paix") {
+                setPeace(currentEvent.familyId);
+              }
+            }
+
             let deltas = { cash: 0, respect: 0, heat: 0 };
             setState((prev) => {
               const after = apply(prev);
@@ -968,6 +1046,7 @@ export default function MafiaIdleRedesign() {
             journalTooltipContent={journalTooltipContent}
             saveVersion={state.version ?? SAVE_VERSION}
             migratedFrom={migratedFrom}
+            onShowMissions={() => setShowMissions(true)}
           />
         </div>
 
@@ -1025,7 +1104,7 @@ export default function MafiaIdleRedesign() {
             <div className="lg:col-span-6">
               <Card
                 title="💼 Opérations lucratives"
-                subtitle={`+$ ${formatNumber(prodSummary.cashPerSec)} /s`}
+                subtitle={`+$ ${formatNumberUI(prodSummary.cashPerSec)} /s`}
                 fullHeight
               >
                 <div className="grid md:grid-cols-2 gap-4 flex-1 min-h-0 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-yellow-600 scrollbar-track-black/30">
@@ -1151,6 +1230,13 @@ export default function MafiaIdleRedesign() {
               fullHeight
             >
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <ActionCard
+                  icon="📋"
+                  title="Missions"
+                  desc="Progression linéaire basée sur votre niveau"
+                  buttonText="Voir missions"
+                  onClick={() => setShowMissions(true)}
+                />
                 <ActionCard
                   icon="🏭"
                   title="Entrepôt"
@@ -1407,6 +1493,26 @@ export default function MafiaIdleRedesign() {
           playerState={state}
           onClose={() => setShowIntel(false)}
         />
+      )}
+
+      {/* Modal Missions */}
+      {showMissions && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+          <div className="w-full max-w-6xl h-[90vh] bg-slate-900 rounded-lg overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-4 bg-slate-800 border-b border-slate-700">
+              <h2 className="text-xl font-bold text-white">📋 Missions</h2>
+              <button
+                onClick={() => setShowMissions(false)}
+                className="text-slate-400 hover:text-white text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <MissionsPanel state={state} />
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Modal Opérations de guerre */}
